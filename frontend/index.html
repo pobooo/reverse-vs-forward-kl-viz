@@ -187,6 +187,12 @@
           实现：两种 KL 都通过 <b>数值积分</b>（梯形法则，2000 点密网格）在 PyTorch 里求得，
           梯度对 $\theta$ 自动回传。无采样噪声，$\hat D_{\mathrm{KL}}\ge 0$ 严格成立。
         </div>
+        <div class="muted" style="margin-top:10px; padding: 8px 10px; background: rgba(110,231,255,0.08); border-left: 3px solid var(--accent); border-radius: 4px;">
+          <b style="color:var(--accent)">⚠ 实际拟合更复杂</b>：mode-seeking / mode-covering 是<b>倾向性描述</b>，不是<b>确定性保证</b>。
+          最终结果由 <b>K_q 容量、学习率、初始化、迭代步数、局部最优</b> 共同决定。
+          例如 K_q ≥ K_p 时两种 KL 结果几乎一样；K_q &lt; K_p 时 reverse KL 也常出现"多个分量挤同一 mode"的局部最优。
+          真实 VI/LLM 蒸馏还会叠加采样噪声、正则项、模型架构等因素——本 demo 是<b>建立直觉</b>用的极简案例。
+        </div>
       </div>
 
       <div class="plot-wrap">
