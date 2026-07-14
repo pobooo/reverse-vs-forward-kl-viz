@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>Reverse vs Forward KL · 多模态拟合可视化</title>
+<script>
+  // MathJax config must be set before loading the script.
+  window.MathJax = {
+    tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+    svg: { fontCache: 'global' }
+  };
+</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<style>
+  :root {
+    --bg: #0f1220;
+    --panel: #171a2e;
+    --text: #e8ecff;
+    --muted: #8a90b8;
+    --accent: #6ee7ff;
+    --p-color: #ffd166;
+    --q-rev: #ef476f;
+    --q-fwd: #06d6a0;
+    --grid: #2a2f4a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  header {
+    padding: 18px 24px; border-bottom: 1px solid var(--grid);
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  main {
+    display: grid; grid-template-columns: 320px 1fr; gap: 18px;
+    padding: 18px 24px; max-width: 1400px; margin: 0 auto;
+  }
+  .panel { background: var(--panel); border-radius: 10px; padding: 16px 18px; }
+  .panel h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--accent); letter-spacing: .5px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; }
+  input[type=number], select {
+    width: 100%; padding: 8px 10px; background: #0c0f1e; color: var(--text);
+    border: 1px solid var(--grid); border-radius: 6px; font-size: 13px;
+  }
+  input[type=range] { width: 100%; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+  button {
+    padding: 10px 12px; border-radius: 6px; border: none; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: #0f1220; transition: filter .15s;
+  }
+  button.rev { background: var(--q-rev); color: #fff; }
+  button.fwd { background: var(--q-fwd); }
+  button.both { grid-column: span 2; background: var(--accent); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button:hover:not(:disabled) { filter: brightness(1.1); }
+  .status { margin-top: 12px; font-size: 12px; color: var(--muted); min-height: 18px; }
+  .plots { display: grid; grid-template-rows: auto 360px 200px; gap: 14px; }
+  .plot-wrap { background: var(--panel); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; }
+  .plot-wrap canvas { flex: 1; min-height: 0; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .legend { display: flex; gap: 16px; font-size: 12px; margin-top: 6px; color: var(--muted); }
+  .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  .notes { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .notes code { background:#0c0f1e; padding: 1px 5px; border-radius: 3px; color: var(--accent); }
+  .kv { display:flex; justify-content: space-between; font-size:12px; margin:4px 0; }
+  .kv b { color: var(--text); font-weight:600; }
+  .formulas { background: var(--panel); border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; }
+  .formulas h3 { margin: 0 0 4px; font-size: 13px; color: var(--accent); }
+  .formulas .block { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 8px; }
+  .formulas .col { font-size: 12.5px; color: var(--text); line-height: 1.55; }
+  .formulas .col b { color: var(--accent); }
+  .formulas .col .tag { display:inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight:600; margin-right: 6px; }
+  .formulas .tag.rev { background: rgba(239,71,111,.25); color: var(--q-rev); }
+  .formulas .tag.fwd { background: rgba(6,214,160,.25); color: var(--q-fwd); }
+  .formulas mjx-container { color: var(--text) !important; }
+  .formulas .muted { color: var(--muted); font-size: 11.5px; }
+  @media (max-width: 900px) { .formulas .block { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Reverse vs Forward KL · 多模态高斯拟合</h1>
+    <span class="sub">Reverse KL(q‖p) 倾向 mode-seeking，Forward KL(p‖q) 倾向 mode-covering</span>
+  </header>
+
+  <main>
+    <aside class="panel">
+      <h3>参数设置</h3>
+
+      <label>目标分布 p(x) 的 mode 数量: <span id="pv">3</span></label>
+      <input type="range" id="target_modes" min="1" max="6" value="3" />
+
+      <label>变分分布 q(x) 的高斯分量数: <span id="qv">1</span></label>
+      <input type="range" id="q_components" min="1" max="6" value="1" />
+
+      <div class="row">
+        <div>
+          <label>迭代步数</label>
+          <input type="number" id="steps" value="400" min="50" max="2000" step="50" />
+        </div>
+        <div>
+          <label>学习率</label>
+          <input type="number" id="lr" value="0.05" min="0.001" max="0.5" step="0.005" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>推送间隔</label>
+          <input type="number" id="send_every" value="2" min="1" max="20" step="1" />
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <div style="font-size:11px;color:var(--muted);padding-top:8px">已改用数值积分，无采样噪声</div>
+        </div>
+      </div>
+
+      <div class="btn-group">
+        <button class="rev" id="btn-rev">Reverse KL</button>
+        <button class="fwd" id="btn-fwd">Forward KL</button>
+        <button class="both" id="btn-both">同时对比 (双通道)</button>
+      </div>
+
+      <div class="status" id="status">未连接</div>
+
+      <h3 style="margin-top:20px">运行状态</h3>
+      <div class="kv"><span>Step</span><b id="k-step">–</b></div>
+      <div class="kv"><span>Reverse KL Loss</span><b id="k-loss-rev">–</b></div>
+      <div class="kv"><span>Forward KL Loss</span><b id="k-loss-fwd">–</b></div>
+
+      <h3 style="margin-top:20px">说明</h3>
+      <div class="notes">
+        <b>Reverse KL</b> = E<sub>q</sub>[log q − log p]：q 落在 p 为零的地方会被无穷惩罚，
+        所以 q 会退缩到 p 的某个 mode 上（mode-seeking / zero-forcing）。<br><br>
+        <b>Forward KL</b> = E<sub>p</sub>[log p − log q]：q 在 p 有质量的地方却是零会被无穷惩罚，
+        所以 q 会尽量覆盖所有 mode（mode-covering / zero-avoiding）。<br><br>
+        参考: <code>blog.evjang.com/2016/08/variational-bayes.html</code>
+      </div>
+    </aside>
+
+    <section class="plots">
+      <div class="formulas">
+        <h3>公式说明</h3>
+        <div class="block">
+          <div class="col">
+            <b>目标分布 p(x)</b>（固定，<span id="fpk">3</span> 个 mode）
+            $$p(x)=\sum_{k=1}^{K_p} w_k\,\mathcal{N}(x\mid \mu_k,\sigma_k^2)$$
+            <div class="muted">
+              代码中 $\mu_k$ 在 $[-4\frac{K_p-1}{2},\;+4\frac{K_p-1}{2}]$ 等距取值，
+              $\sigma_k=0.6$，$w_k=1/K_p$。
+            </div>
+          </div>
+          <div class="col">
+            <b>变分分布 q(x; θ)</b>（可训练，<span id="fqk">1</span> 个分量）
+            $$q(x;\theta)=\sum_{j=1}^{K_q}\pi_j\,\mathcal{N}(x\mid m_j,s_j^2)$$
+            <div class="muted">
+              $\theta=\{m_j,\;s_j,\;\pi_j\}$ 通过 Adam 优化，
+              $\pi_j=\mathrm{softmax}(\text{logits})_j$。
+            </div>
+          </div>
+        </div>
+        <div class="block" style="margin-top:14px">
+          <div class="col">
+            <span class="tag rev">Reverse KL</span> <b>mode-seeking</b>
+            $$D_{\mathrm{KL}}(q\|p)=\int q(x)\log\frac{q(x)}{p(x)}\,dx$$
+            <div class="muted">
+              q 落在 p 为零的位置会被无穷惩罚（zero-forcing），
+              所以 q 会收缩到某个 mode 上。
+            </div>
+          </div>
+          <div class="col">
+            <span class="tag fwd">Forward KL</span> <b>mode-covering</b>
+            $$D_{\mathrm{KL}}(p\|q)=\int p(x)\log\frac{p(x)}{q(x)}\,dx$$
+            <div class="muted">
+              p 有质量但 q 为零的位置会被无穷惩罚（zero-avoiding），
+              所以 q 会尽量覆盖所有 mode。
+            </div>
+          </div>
+        </div>
+        <div class="muted" style="margin-top:10px">
+          实现：两种 KL 都通过 <b>数值积分</b>（梯形法则，2000 点密网格）在 PyTorch 里求得，
+          梯度对 $\theta$ 自动回传。无采样噪声，$\hat D_{\mathrm{KL}}\ge 0$ 严格成立。
+        </div>
+      </div>
+
+      <div class="plot-wrap">
+        <canvas id="plot"></canvas>
+        <div class="legend">
+          <span><span class="dot" style="background:var(--p-color)"></span>目标 p(x)</span>
+          <span><span class="dot" style="background:var(--q-rev)"></span>q (Reverse KL)</span>
+          <span><span class="dot" style="background:var(--q-fwd)"></span>q (Forward KL)</span>
+        </div>
+      </div>
+      <div class="plot-wrap">
+        <canvas id="loss"></canvas>
+        <div class="legend">
+          <span><span class="dot" style="background:var(--q-rev)"></span>Reverse KL 曲线</span>
+          <span><span class="dot" style="background:var(--q-fwd)"></span>Forward KL 曲线</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+<script>
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+const state = {
+  grid: null,
+  p_pdf: null,
+  q_pdf: { reverse: null, forward: null },
+  loss_hist: { reverse: [], forward: [] },
+  running: 0,
+  ymax: 0.6,
+};
+
+// ---------------------------------------------------------------------------
+// UI hooks
+// ---------------------------------------------------------------------------
+const $ = (id) => document.getElementById(id);
+$('target_modes').oninput = e => { $('pv').textContent = e.target.value; $('fpk').textContent = e.target.value; };
+$('q_components').oninput = e => { $('qv').textContent = e.target.value; $('fqk').textContent = e.target.value; };
+
+function setStatus(msg) { $('status').textContent = msg; }
+function disableButtons(d) {
+  ['btn-rev','btn-fwd','btn-both'].forEach(id => $(id).disabled = d);
+}
+
+// ---------------------------------------------------------------------------
+// Canvas plots (retina aware)
+// ---------------------------------------------------------------------------
+function setupCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w: rect.width, h: rect.height };
+}
+
+function drawPDF() {
+  const canvas = $('plot');
+  const { ctx, w, h } = setupCanvas(canvas);
+  ctx.clearRect(0, 0, w, h);
+
+  if (!state.grid) {
+    ctx.fillStyle = '#8a90b8'; ctx.font = '13px sans-serif';
+    ctx.fillText('点击左侧按钮开始训练', 20, 30); return;
+  }
+
+  const pad = { l: 40, r: 20, t: 20, b: 30 };
+  const xs = state.grid;
+  const x0 = xs[0], x1 = xs[xs.length-1];
+
+  // Determine y max: anchor on p's peak so a temporarily-spiky q can't stretch the axis.
+  const pmax = state.p_pdf.reduce((m, v) => v > m ? v : m, 0);
+  const qArrays = [state.q_pdf.reverse, state.q_pdf.forward].filter(Boolean);
+  let qmax = 0;
+  for (const a of qArrays) for (const v of a) if (v > qmax) qmax = v;
+  // Allow q to push ymax a bit above p, but cap at 2x so tall spikes get clipped.
+  let ymax = Math.max(pmax * 1.25, Math.min(qmax * 1.05, pmax * 2.0), 0.1);
+  state.ymax = ymax;
+
+  const X = x => pad.l + (x - x0) / (x1 - x0) * (w - pad.l - pad.r);
+  const Y = y => h - pad.b - (Math.min(y, ymax) / ymax) * (h - pad.t - pad.b);
+
+  // grid
+  ctx.strokeStyle = '#2a2f4a'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i <= 5; i++) {
+    const y = pad.t + i * (h - pad.t - pad.b) / 5;
+    ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y);
+  }
+  ctx.stroke();
+
+  // axes labels
+  ctx.fillStyle = '#8a90b8'; ctx.font = '11px sans-serif';
+  ctx.fillText(x0.toFixed(1), pad.l, h - 10);
+  ctx.fillText(x1.toFixed(1), w - pad.r - 20, h - 10);
+  ctx.fillText('p(x), q(x)', 6, pad.t + 10);
+
+  const drawLine = (arr, color, fill) => {
+    if (!arr) return;
+    ctx.beginPath();
+    for (let i = 0; i < xs.length; i++) {
+      const x = X(xs[i]), y = Y(arr[i]);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    if (fill) {
+      ctx.lineTo(X(xs[xs.length-1]), Y(0));
+      ctx.lineTo(X(xs[0]), Y(0));
+      ctx.closePath();
+      ctx.fillStyle = fill; ctx.fill();
+    } else {
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+    }
+  };
+
+  drawLine(state.p_pdf, '#ffd166', 'rgba(255,209,102,0.18)');
+  drawLine(state.p_pdf, '#ffd166', null);
+  drawLine(state.q_pdf.reverse, '#ef476f', null);
+  drawLine(state.q_pdf.forward, '#06d6a0', null);
+}
+
+function drawLossCurve() {
+  const canvas = $('loss');
+  const { ctx, w, h } = setupCanvas(canvas);
+  ctx.clearRect(0, 0, w, h);
+
+  const pad = { l: 44, r: 20, t: 14, b: 24 };
+  const hists = [state.loss_hist.reverse, state.loss_hist.forward];
+  const maxLen = Math.max(hists[0].length, hists[1].length, 1);
+  let vmin = Infinity, vmax = -Infinity;
+  for (const hist of hists) {
+    for (const v of hist) {
+      if (!Number.isFinite(v)) continue;
+      if (v < vmin) vmin = v;
+      if (v > vmax) vmax = v;
+    }
+  }
+  if (!Number.isFinite(vmin)) { vmin = 0; vmax = 1; }
+  if (vmax - vmin < 1e-6) vmax = vmin + 1;
+
+  const X = i => pad.l + i / Math.max(maxLen - 1, 1) * (w - pad.l - pad.r);
+  const Y = v => h - pad.b - (v - vmin) / (vmax - vmin) * (h - pad.t - pad.b);
+
+  // grid
+  ctx.strokeStyle = '#2a2f4a';
+  ctx.beginPath();
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.t + i * (h - pad.t - pad.b) / 4;
+    ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y);
+  }
+  ctx.stroke();
+
+  ctx.fillStyle = '#8a90b8'; ctx.font = '11px sans-serif';
+  ctx.fillText(vmax.toFixed(2), 4, pad.t + 10);
+  ctx.fillText(vmin.toFixed(2), 4, h - pad.b);
+  ctx.fillText('step', w - 30, h - 8);
+
+  const drawHist = (hist, color) => {
+    if (!hist.length) return;
+    ctx.beginPath();
+    let started = false;
+    hist.forEach((v, i) => {
+      if (v === null || !Number.isFinite(v)) { started = false; return; }
+      const x = X(i), y = Y(v);
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+  };
+  drawHist(state.loss_hist.reverse, '#ef476f');
+  drawHist(state.loss_hist.forward, '#06d6a0');
+}
+
+function redraw() { drawPDF(); drawLossCurve(); }
+window.addEventListener('resize', redraw);
+
+// ---------------------------------------------------------------------------
+// WebSocket driver
+// ---------------------------------------------------------------------------
+function wsUrl() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${location.host}/ws/train`;
+}
+
+function startRun(kl_type) {
+  state.q_pdf[kl_type] = null;
+  state.loss_hist[kl_type] = [];
+  state.running += 1;
+  disableButtons(true);
+  setStatus(`连接中… (${kl_type} KL)`);
+  const ws = new WebSocket(wsUrl());
+  ws.onopen = () => {
+    setStatus(`训练中 · ${kl_type} KL`);
+    ws.send(JSON.stringify({
+      action: 'start',
+      kl_type,
+      target_modes: +$('target_modes').value,
+      q_components: +$('q_components').value,
+      steps: +$('steps').value,
+      lr: +$('lr').value,
+      send_every: +$('send_every').value,
+    }));
+  };
+  ws.onmessage = ev => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'init') {
+      state.grid = msg.grid;
+      state.p_pdf = msg.p_pdf;
+    } else if (msg.type === 'step') {
+      // Guard: replace NaN/Infinity/absurd values so a numerical blow-up can't destroy the plot.
+      state.q_pdf[kl_type] = msg.q_pdf.map(v => Number.isFinite(v) ? v : 0);
+      const l = msg.loss;
+      const safeLoss = (Number.isFinite(l) && Math.abs(l) < 1e6) ? l : null;
+      state.loss_hist[kl_type].push(safeLoss);
+      $('k-step').textContent = msg.step;
+      if (kl_type === 'reverse') $('k-loss-rev').textContent = msg.loss.toFixed(4);
+      else $('k-loss-fwd').textContent = msg.loss.toFixed(4);
+      redraw();
+    } else if (msg.type === 'done') {
+      ws.close();
+    }
+  };
+  ws.onclose = () => {
+    state.running -= 1;
+    if (state.running <= 0) {
+      state.running = 0;
+      disableButtons(false);
+      setStatus('完成');
+    }
+  };
+  ws.onerror = () => { setStatus('WebSocket 错误'); };
+}
+
+$('btn-rev').onclick = () => { state.q_pdf.forward = null; state.loss_hist.forward = []; startRun('reverse'); };
+$('btn-fwd').onclick = () => { state.q_pdf.reverse = null; state.loss_hist.reverse = []; startRun('forward'); };
+$('btn-both').onclick = () => { startRun('reverse'); startRun('forward'); };
+
+redraw();
+</script>
+</body>
+</html>
