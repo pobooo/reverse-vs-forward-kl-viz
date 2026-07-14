@@ -35,6 +35,13 @@
   }
   header h1 { margin: 0; font-size: 18px; font-weight: 600; }
   header .sub { color: var(--muted); font-size: 13px; }
+  .lang-switch { margin-left: auto; display: flex; gap: 4px; }
+  .lang-switch button {
+    background: transparent; color: var(--muted); border: 1px solid var(--grid);
+    padding: 4px 10px; font-size: 12px; font-weight: 500; border-radius: 4px;
+    cursor: pointer;
+  }
+  .lang-switch button.active { background: var(--accent); color: #0f1220; border-color: var(--accent); }
   main {
     display: grid; grid-template-columns: 320px 1fr; gap: 18px;
     padding: 18px 24px; max-width: 1400px; margin: 0 auto;
@@ -85,57 +92,61 @@
 </head>
 <body>
   <header>
-    <h1>Reverse vs Forward KL · 多模态高斯拟合</h1>
-    <span class="sub">Reverse KL(q‖p) 倾向 mode-seeking，Forward KL(p‖q) 倾向 mode-covering</span>
+    <h1 data-i18n="title">Reverse vs Forward KL · 多模态高斯拟合</h1>
+    <span class="sub" data-i18n="subtitle">Reverse KL(q‖p) 倾向 mode-seeking，Forward KL(p‖q) 倾向 mode-covering</span>
+    <div class="lang-switch">
+      <button data-lang="zh">中</button>
+      <button data-lang="en">EN</button>
+    </div>
   </header>
 
   <main>
     <aside class="panel">
-      <h3>参数设置</h3>
+      <h3 data-i18n="panel.params">参数设置</h3>
 
-      <label>目标分布 p(x) 的 mode 数量: <span id="pv">3</span></label>
+      <label><span data-i18n="panel.pModes">目标分布 p(x) 的 mode 数量</span>: <span id="pv">3</span></label>
       <input type="range" id="target_modes" min="1" max="6" value="3" />
 
-      <label>变分分布 q(x) 的高斯分量数: <span id="qv">1</span></label>
+      <label><span data-i18n="panel.qComps">变分分布 q(x) 的高斯分量数</span>: <span id="qv">1</span></label>
       <input type="range" id="q_components" min="1" max="6" value="1" />
 
       <div class="row">
         <div>
-          <label>迭代步数</label>
+          <label data-i18n="panel.steps">迭代步数</label>
           <input type="number" id="steps" value="400" min="50" max="2000" step="50" />
         </div>
         <div>
-          <label>学习率</label>
+          <label data-i18n="panel.lr">学习率</label>
           <input type="number" id="lr" value="0.05" min="0.001" max="0.5" step="0.005" />
         </div>
       </div>
 
       <div class="row">
         <div>
-          <label>推送间隔</label>
+          <label data-i18n="panel.pushEvery">推送间隔</label>
           <input type="number" id="send_every" value="2" min="1" max="20" step="1" />
         </div>
         <div>
           <label>&nbsp;</label>
-          <div style="font-size:11px;color:var(--muted);padding-top:8px">已改用数值积分，无采样噪声</div>
+          <div style="font-size:11px;color:var(--muted);padding-top:8px" data-i18n="panel.integNote">已改用数值积分，无采样噪声</div>
         </div>
       </div>
 
       <div class="btn-group">
         <button class="rev" id="btn-rev">Reverse KL</button>
         <button class="fwd" id="btn-fwd">Forward KL</button>
-        <button class="both" id="btn-both">同时对比 (双通道)</button>
+        <button class="both" id="btn-both" data-i18n="panel.btnBoth">同时对比 (双通道)</button>
       </div>
 
-      <div class="status" id="status">未连接</div>
+      <div class="status" id="status" data-i18n="panel.statusIdle">未连接</div>
 
-      <h3 style="margin-top:20px">运行状态</h3>
+      <h3 style="margin-top:20px" data-i18n="panel.runState">运行状态</h3>
       <div class="kv"><span>Step</span><b id="k-step">–</b></div>
       <div class="kv"><span>Reverse KL Loss</span><b id="k-loss-rev">–</b></div>
       <div class="kv"><span>Forward KL Loss</span><b id="k-loss-fwd">–</b></div>
 
-      <h3 style="margin-top:20px">说明</h3>
-      <div class="notes">
+      <h3 style="margin-top:20px" data-i18n="panel.notesTitle">说明</h3>
+      <div class="notes" data-i18n-html="panel.notes">
         <b>Reverse KL</b> = E<sub>q</sub>[log q − log p]：q 落在 p 为零的地方会被无穷惩罚，
         所以 q 会退缩到 p 的某个 mode 上（mode-seeking / zero-forcing）。<br><br>
         <b>Forward KL</b> = E<sub>p</sub>[log p − log q]：q 在 p 有质量的地方却是零会被无穷惩罚，
@@ -146,48 +157,48 @@
 
     <section class="plots">
       <div class="formulas">
-        <h3>公式说明</h3>
+        <h3 data-i18n="fx.title">公式说明</h3>
         <div class="block">
-          <div class="col">
+          <div class="col" data-i18n-html="fx.pBlock">
             <b>目标分布 p(x)</b>（固定，<span id="fpk">3</span> 个 mode）
             $$p(x)=\sum_{k=1}^{K_p} w_k\,\mathcal{N}(x\mid \mu_k,\sigma_k^2)$$
             <div class="muted">
-              代码中 $\mu_k$ 在 $[-4\frac{K_p-1}{2},\;+4\frac{K_p-1}{2}]$ 等距取值，
-              $\sigma_k=0.6$，$w_k=1/K_p$。
+              代码中 $\mu_k$ 在 $[-4\frac{K_p-1}{2},\;+4\frac{K_p-1}{2}]$ 等距取值,
+              $\sigma_k=0.6$, $w_k=1/K_p$。
             </div>
           </div>
-          <div class="col">
+          <div class="col" data-i18n-html="fx.qBlock">
             <b>变分分布 q(x; θ)</b>（可训练，<span id="fqk">1</span> 个分量）
             $$q(x;\theta)=\sum_{j=1}^{K_q}\pi_j\,\mathcal{N}(x\mid m_j,s_j^2)$$
             <div class="muted">
-              $\theta=\{m_j,\;s_j,\;\pi_j\}$ 通过 Adam 优化，
+              $\theta=\{m_j,\;s_j,\;\pi_j\}$ 通过 Adam 优化,
               $\pi_j=\mathrm{softmax}(\text{logits})_j$。
             </div>
           </div>
         </div>
         <div class="block" style="margin-top:14px">
-          <div class="col">
+          <div class="col" data-i18n-html="fx.revBlock">
             <span class="tag rev">Reverse KL</span> <b>mode-seeking</b>
             $$D_{\mathrm{KL}}(q\|p)=\int q(x)\log\frac{q(x)}{p(x)}\,dx$$
             <div class="muted">
-              q 落在 p 为零的位置会被无穷惩罚（zero-forcing），
+              q 落在 p 为零的位置会被无穷惩罚（zero-forcing）,
               所以 q 会收缩到某个 mode 上。
             </div>
           </div>
-          <div class="col">
+          <div class="col" data-i18n-html="fx.fwdBlock">
             <span class="tag fwd">Forward KL</span> <b>mode-covering</b>
             $$D_{\mathrm{KL}}(p\|q)=\int p(x)\log\frac{p(x)}{q(x)}\,dx$$
             <div class="muted">
-              p 有质量但 q 为零的位置会被无穷惩罚（zero-avoiding），
+              p 有质量但 q 为零的位置会被无穷惩罚（zero-avoiding）,
               所以 q 会尽量覆盖所有 mode。
             </div>
           </div>
         </div>
-        <div class="muted" style="margin-top:10px">
-          实现：两种 KL 都通过 <b>数值积分</b>（梯形法则，2000 点密网格）在 PyTorch 里求得，
+        <div class="muted" style="margin-top:10px" data-i18n-html="fx.implNote">
+          实现：两种 KL 都通过 <b>数值积分</b>（梯形法则，2000 点密网格）在 PyTorch 里求得,
           梯度对 $\theta$ 自动回传。无采样噪声，$\hat D_{\mathrm{KL}}\ge 0$ 严格成立。
         </div>
-        <div class="muted" style="margin-top:10px; padding: 8px 10px; background: rgba(110,231,255,0.08); border-left: 3px solid var(--accent); border-radius: 4px;">
+        <div class="muted" style="margin-top:10px; padding: 8px 10px; background: rgba(110,231,255,0.08); border-left: 3px solid var(--accent); border-radius: 4px;" data-i18n-html="fx.warning">
           <b style="color:var(--accent)">⚠ 实际拟合更复杂</b>：mode-seeking / mode-covering 是<b>倾向性描述</b>，不是<b>确定性保证</b>。
           最终结果由 <b>K_q 容量、学习率、初始化、迭代步数、局部最优</b> 共同决定。
           例如 K_q ≥ K_p 时两种 KL 结果几乎一样；K_q &lt; K_p 时 reverse KL 也常出现"多个分量挤同一 mode"的局部最优。
@@ -198,7 +209,7 @@
       <div class="plot-wrap">
         <canvas id="plot"></canvas>
         <div class="legend">
-          <span><span class="dot" style="background:var(--p-color)"></span>目标 p(x)</span>
+          <span><span class="dot" style="background:var(--p-color)"></span><span data-i18n="legend.pTarget">目标 p(x)</span></span>
           <span><span class="dot" style="background:var(--q-rev)"></span>q (Reverse KL)</span>
           <span><span class="dot" style="background:var(--q-fwd)"></span>q (Forward KL)</span>
         </div>
@@ -206,14 +217,120 @@
       <div class="plot-wrap">
         <canvas id="loss"></canvas>
         <div class="legend">
-          <span><span class="dot" style="background:var(--q-rev)"></span>Reverse KL 曲线</span>
-          <span><span class="dot" style="background:var(--q-fwd)"></span>Forward KL 曲线</span>
+          <span><span class="dot" style="background:var(--q-rev)"></span><span data-i18n="legend.revCurve">Reverse KL 曲线</span></span>
+          <span><span class="dot" style="background:var(--q-fwd)"></span><span data-i18n="legend.fwdCurve">Forward KL 曲线</span></span>
         </div>
       </div>
     </section>
   </main>
 
 <script>
+// ---------------------------------------------------------------------------
+// i18n
+// ---------------------------------------------------------------------------
+const I18N = {
+  zh: {
+    'title': 'Reverse vs Forward KL · 多模态高斯拟合',
+    'subtitle': 'Reverse KL(q‖p) 倾向 mode-seeking，Forward KL(p‖q) 倾向 mode-covering',
+    'panel.params': '参数设置',
+    'panel.pModes': '目标分布 p(x) 的 mode 数量',
+    'panel.qComps': '变分分布 q(x) 的高斯分量数',
+    'panel.steps': '迭代步数',
+    'panel.lr': '学习率',
+    'panel.pushEvery': '推送间隔',
+    'panel.integNote': '已改用数值积分，无采样噪声',
+    'panel.btnBoth': '同时对比 (双通道)',
+    'panel.statusIdle': '未连接',
+    'panel.statusConnecting': '连接中… ({kl} KL)',
+    'panel.statusTraining': '训练中 · {kl} KL',
+    'panel.statusDone': '完成',
+    'panel.statusError': 'WebSocket 错误',
+    'panel.runState': '运行状态',
+    'panel.notesTitle': '说明',
+    'panel.notes': '<b>Reverse KL</b> = E<sub>q</sub>[log q − log p]：q 落在 p 为零的地方会被无穷惩罚，所以 q 会退缩到 p 的某个 mode 上（mode-seeking / zero-forcing）。<br><br><b>Forward KL</b> = E<sub>p</sub>[log p − log q]：q 在 p 有质量的地方却是零会被无穷惩罚，所以 q 会尽量覆盖所有 mode（mode-covering / zero-avoiding）。<br><br>参考: <code>blog.evjang.com/2016/08/variational-bayes.html</code>',
+    'fx.title': '公式说明',
+    'fx.pBlock': '<b>目标分布 p(x)</b>（固定，<span id="fpk">3</span> 个 mode）$$p(x)=\\sum_{k=1}^{K_p} w_k\\,\\mathcal{N}(x\\mid \\mu_k,\\sigma_k^2)$$<div class="muted">代码中 $\\mu_k$ 在 $[-4\\frac{K_p-1}{2},\\;+4\\frac{K_p-1}{2}]$ 等距取值, $\\sigma_k=0.6$, $w_k=1/K_p$。</div>',
+    'fx.qBlock': '<b>变分分布 q(x; θ)</b>（可训练，<span id="fqk">1</span> 个分量）$$q(x;\\theta)=\\sum_{j=1}^{K_q}\\pi_j\\,\\mathcal{N}(x\\mid m_j,s_j^2)$$<div class="muted">$\\theta=\\{m_j,\\;s_j,\\;\\pi_j\\}$ 通过 Adam 优化, $\\pi_j=\\mathrm{softmax}(\\text{logits})_j$。</div>',
+    'fx.revBlock': '<span class="tag rev">Reverse KL</span> <b>mode-seeking</b>$$D_{\\mathrm{KL}}(q\\|p)=\\int q(x)\\log\\frac{q(x)}{p(x)}\\,dx$$<div class="muted">q 落在 p 为零的位置会被无穷惩罚（zero-forcing）, 所以 q 会收缩到某个 mode 上。</div>',
+    'fx.fwdBlock': '<span class="tag fwd">Forward KL</span> <b>mode-covering</b>$$D_{\\mathrm{KL}}(p\\|q)=\\int p(x)\\log\\frac{p(x)}{q(x)}\\,dx$$<div class="muted">p 有质量但 q 为零的位置会被无穷惩罚（zero-avoiding）, 所以 q 会尽量覆盖所有 mode。</div>',
+    'fx.implNote': '实现：两种 KL 都通过 <b>数值积分</b>（梯形法则，2000 点密网格）在 PyTorch 里求得, 梯度对 $\\theta$ 自动回传。无采样噪声，$\\hat D_{\\mathrm{KL}}\\ge 0$ 严格成立。',
+    'fx.warning': '<b style="color:var(--accent)">⚠ 实际拟合更复杂</b>：mode-seeking / mode-covering 是<b>倾向性描述</b>，不是<b>确定性保证</b>。最终结果由 <b>K_q 容量、学习率、初始化、迭代步数、局部最优</b> 共同决定。例如 K_q ≥ K_p 时两种 KL 结果几乎一样；K_q &lt; K_p 时 reverse KL 也常出现"多个分量挤同一 mode"的局部最优。真实 VI/LLM 蒸馏还会叠加采样噪声、正则项、模型架构等因素——本 demo 是<b>建立直觉</b>用的极简案例。',
+    'legend.pTarget': '目标 p(x)',
+    'legend.revCurve': 'Reverse KL 曲线',
+    'legend.fwdCurve': 'Forward KL 曲线',
+  },
+  en: {
+    'title': 'Reverse vs Forward KL · Multi-Modal Gaussian Fitting',
+    'subtitle': 'Reverse KL(q‖p) tends toward mode-seeking; Forward KL(p‖q) tends toward mode-covering',
+    'panel.params': 'Parameters',
+    'panel.pModes': 'Number of modes in target p(x)',
+    'panel.qComps': 'Number of Gaussian components in q(x)',
+    'panel.steps': 'Steps',
+    'panel.lr': 'Learning rate',
+    'panel.pushEvery': 'Push every',
+    'panel.integNote': 'Now using numerical integration — no sampling noise',
+    'panel.btnBoth': 'Compare Both (dual channel)',
+    'panel.statusIdle': 'Not connected',
+    'panel.statusConnecting': 'Connecting… ({kl} KL)',
+    'panel.statusTraining': 'Training · {kl} KL',
+    'panel.statusDone': 'Done',
+    'panel.statusError': 'WebSocket error',
+    'panel.runState': 'Run status',
+    'panel.notesTitle': 'Notes',
+    'panel.notes': '<b>Reverse KL</b> = E<sub>q</sub>[log q − log p]: if q places mass where p is zero, the penalty is infinite, so q retreats onto a single mode of p (mode-seeking / zero-forcing).<br><br><b>Forward KL</b> = E<sub>p</sub>[log p − log q]: if q is zero where p has mass, the penalty is infinite, so q tries to cover every mode of p (mode-covering / zero-avoiding).<br><br>Ref: <code>blog.evjang.com/2016/08/variational-bayes.html</code>',
+    'fx.title': 'Formulas',
+    'fx.pBlock': '<b>Target distribution p(x)</b> (fixed, <span id="fpk">3</span> modes)$$p(x)=\\sum_{k=1}^{K_p} w_k\\,\\mathcal{N}(x\\mid \\mu_k,\\sigma_k^2)$$<div class="muted">In code, $\\mu_k$ is evenly spaced on $[-4\\frac{K_p-1}{2},\\;+4\\frac{K_p-1}{2}]$, with $\\sigma_k=0.6$ and $w_k=1/K_p$.</div>',
+    'fx.qBlock': '<b>Variational distribution q(x; θ)</b> (trainable, <span id="fqk">1</span> components)$$q(x;\\theta)=\\sum_{j=1}^{K_q}\\pi_j\\,\\mathcal{N}(x\\mid m_j,s_j^2)$$<div class="muted">$\\theta=\\{m_j,\\;s_j,\\;\\pi_j\\}$ are optimized by Adam, with $\\pi_j=\\mathrm{softmax}(\\text{logits})_j$.</div>',
+    'fx.revBlock': '<span class="tag rev">Reverse KL</span> <b>mode-seeking</b>$$D_{\\mathrm{KL}}(q\\|p)=\\int q(x)\\log\\frac{q(x)}{p(x)}\\,dx$$<div class="muted">Placing q where p is zero is infinitely penalized (zero-forcing), so q collapses onto a single mode.</div>',
+    'fx.fwdBlock': '<span class="tag fwd">Forward KL</span> <b>mode-covering</b>$$D_{\\mathrm{KL}}(p\\|q)=\\int p(x)\\log\\frac{p(x)}{q(x)}\\,dx$$<div class="muted">Regions where p has mass but q is zero are infinitely penalized (zero-avoiding), so q spreads to cover every mode.</div>',
+    'fx.implNote': 'Implementation: both KLs are computed by <b>numerical integration</b> (trapezoidal rule, 2000-point dense grid) in PyTorch, with gradients through $\\theta$ from autograd. No sampling noise, and $\\hat D_{\\mathrm{KL}}\\ge 0$ holds strictly.',
+    'fx.warning': '<b style="color:var(--accent)">⚠ Real fits are more complex</b>: mode-seeking / mode-covering are <b>directional tendencies</b>, not <b>deterministic guarantees</b>. The actual outcome depends on <b>K_q capacity, learning rate, initialization, step count, and local optima</b>. For example, when K_q ≥ K_p the two KLs behave almost identically; when K_q &lt; K_p, reverse KL often lands in local optima where multiple components collapse onto the same mode. Real VI / LLM distillation also faces sampling noise, regularization, and architecture choices — this demo is a minimal case for <b>building intuition</b>.',
+    'legend.pTarget': 'Target p(x)',
+    'legend.revCurve': 'Reverse KL curve',
+    'legend.fwdCurve': 'Forward KL curve',
+  }
+};
+
+let currentLang = localStorage.getItem('kl-viz-lang') || 'zh';
+
+function applyLang(lang) {
+  currentLang = lang;
+  localStorage.setItem('kl-viz-lang', lang);
+  const dict = I18N[lang];
+  document.documentElement.lang = (lang === 'zh') ? 'zh-CN' : 'en';
+  // Plain text nodes
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (dict[key] !== undefined) el.textContent = dict[key];
+  });
+  // HTML nodes (contain formulas / tags)
+  document.querySelectorAll('[data-i18n-html]').forEach(el => {
+    const key = el.getAttribute('data-i18n-html');
+    if (dict[key] !== undefined) el.innerHTML = dict[key];
+  });
+  // Sync the fpk/fqk numbers with current slider values after re-render.
+  const fpk = document.getElementById('fpk'); if (fpk) fpk.textContent = document.getElementById('target_modes').value;
+  const fqk = document.getElementById('fqk'); if (fqk) fqk.textContent = document.getElementById('q_components').value;
+  // Active button
+  document.querySelectorAll('.lang-switch button').forEach(b => {
+    b.classList.toggle('active', b.dataset.lang === lang);
+  });
+  // Re-typeset MathJax after HTML swap.
+  if (window.MathJax && window.MathJax.typesetPromise) {
+    window.MathJax.typesetPromise();
+  }
+}
+
+function tr(key, params) {
+  let s = (I18N[currentLang] && I18N[currentLang][key]) || key;
+  if (params) for (const k in params) s = s.replace('{' + k + '}', params[k]);
+  return s;
+}
+
+document.querySelectorAll('.lang-switch button').forEach(b => {
+  b.addEventListener('click', () => applyLang(b.dataset.lang));
+});
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -258,7 +375,7 @@ function drawPDF() {
 
   if (!state.grid) {
     ctx.fillStyle = '#8a90b8'; ctx.font = '13px sans-serif';
-    ctx.fillText('点击左侧按钮开始训练', 20, 30); return;
+    ctx.fillText(currentLang === 'zh' ? '点击左侧按钮开始训练' : 'Click a button on the left to start training', 20, 30); return;
   }
 
   const pad = { l: 40, r: 20, t: 20, b: 30 };
@@ -383,10 +500,10 @@ function startRun(kl_type) {
   state.loss_hist[kl_type] = [];
   state.running += 1;
   disableButtons(true);
-  setStatus(`连接中… (${kl_type} KL)`);
+  setStatus(tr('panel.statusConnecting', { kl: kl_type }));
   const ws = new WebSocket(wsUrl());
   ws.onopen = () => {
-    setStatus(`训练中 · ${kl_type} KL`);
+    setStatus(tr('panel.statusTraining', { kl: kl_type }));
     ws.send(JSON.stringify({
       action: 'start',
       kl_type,
@@ -421,16 +538,17 @@ function startRun(kl_type) {
     if (state.running <= 0) {
       state.running = 0;
       disableButtons(false);
-      setStatus('完成');
+      setStatus(tr('panel.statusDone'));
     }
   };
-  ws.onerror = () => { setStatus('WebSocket 错误'); };
+  ws.onerror = () => { setStatus(tr('panel.statusError')); };
 }
 
 $('btn-rev').onclick = () => { state.q_pdf.forward = null; state.loss_hist.forward = []; startRun('reverse'); };
 $('btn-fwd').onclick = () => { state.q_pdf.reverse = null; state.loss_hist.reverse = []; startRun('forward'); };
 $('btn-both').onclick = () => { startRun('reverse'); startRun('forward'); };
 
+applyLang(currentLang);
 redraw();
 </script>
 </body>
