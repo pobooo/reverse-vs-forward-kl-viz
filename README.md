@@ -1,120 +1,123 @@
-# Reverse KL vs Forward KL · 多模态分布拟合可视化
+# Reverse KL vs Forward KL · Multi-Modal Distribution Fitting Visualizer
 
-一个交互式 demo，直观展示 **reverse KL(q‖p)** 和 **forward KL(p‖q)** 在拟合多模态分布时的**典型倾向**：**mode-seeking** vs **mode-covering**。
+[中文文档 (Chinese README)](./README.zh-CN.md)
 
-后端 PyTorch 做梯度下降，前端 Canvas 实时绘制密度曲线与 loss 曲线，通过 WebSocket 每步推送状态。
+An interactive demo that visualizes the **directional tendencies** of **reverse KL (q‖p)** and **forward KL (p‖q)** when fitting a multi-modal target distribution: **mode-seeking** vs **mode-covering**.
 
-> **注意**：本 demo 用于建立"倾向性直觉"。真实场景下的最终拟合行为**远比一句 "mode-seeking / mode-covering" 复杂**，取决于超参数、模型容量、数据分布的多种因素。详见后文 [复杂性说明](#-复杂性说明最终行为并非只由-kl-方向决定)。
+The backend runs PyTorch gradient descent; the frontend uses Canvas to draw density curves and loss curves in real time, streamed step-by-step over WebSocket.
 
-## 为什么写这个
+> **Important**: This demo is meant to build **intuition** about directional tendencies. In real-world settings, the final fit behavior is **far more complex** than a one-line "mode-seeking / mode-covering" summary — it depends on hyperparameters, model capacity, and data distribution. See the [Complexity Note](#-complexity-note-final-behavior-is-not-determined-by-kl-direction-alone) below.
 
-理解 mode-seeking / mode-covering 的一手参考：
+## Motivation
+
+Primary references for understanding mode-seeking vs mode-covering:
 - Eric Jang, *A Beginner's Guide to Variational Methods: Mean-Field Approximation* — <https://blog.evjang.com/2016/08/variational-bayes.html>
 - Thinking Machines, *On-Policy Distillation* — <https://thinkingmachines.ai/blog/on-policy-distillation/>
 
-两篇文章反复出现同一个结论：**KL 的方向选错，行为会截然不同**。这个 demo 就是把这个结论"看得见摸得着"。
+Both articles converge on the same point: **the direction of the KL matters — the resulting behavior is very different**. This demo makes that concrete and interactive.
 
-### 和 On-Policy Distillation 的关系
+### Connection to On-Policy Distillation
 
-Thinking Machines 那篇博客的核心论点是：LLM 蒸馏该用**在策略 (on-policy) + reverse KL**，而不是传统的 off-policy SFT (等价于 forward KL 的 MLE)：
+The core argument in Thinking Machines' post is that LLM distillation should use **on-policy training + reverse KL**, rather than the traditional off-policy SFT (which is equivalent to a forward-KL MLE):
 
-| 视角 | Forward KL / SFT | Reverse KL / On-policy distillation |
+| Aspect | Forward KL / SFT | Reverse KL / On-policy distillation |
 |---|---|---|
-| 采样来源 | 教师轨迹（离线） | 学生自己 rollout（在线） |
-| 数学形式 | $\mathbb{E}_{x\sim p_{teacher}}[-\log q_{student}(x)]$ | $\mathbb{E}_{x\sim q_{student}}[\log q - \log p_{teacher}]$ |
-| 行为倾向 | **mode-covering** — 覆盖教师所有 mode，产出"平均化"的策略 | **mode-seeking** — 聚焦教师某一个最优 mode，避免多策略混合 |
-| 分布漂移 | 严重（学生会走到教师从未见过的状态） | 无（数据本来就来自学生） |
-| 信息密度 | O(N) bits/episode，dense per-token | 同左 |
+| Sample source | Teacher trajectories (offline) | Student's own rollouts (online) |
+| Math form | $\mathbb{E}_{x\sim p_{teacher}}[-\log q_{student}(x)]$ | $\mathbb{E}_{x\sim q_{student}}[\log q - \log p_{teacher}]$ |
+| Behavioral tendency | **Mode-covering** — cover all teacher modes, produce an "averaged" policy | **Mode-seeking** — commit to one optimal teacher mode, avoid mixed policies |
+| Distribution shift | Severe (student ends up in states the teacher never visited) | None (data comes from the student itself) |
+| Information density | O(N) bits/episode, dense per-token | Same |
 
-引用他们博文原话：
-> "reverse KL 是 'mode-seeking' —— 它学习一种特定行为（教师的），而不是将其分布分散在多个次优选项上。"
+Direct quote from their post:
+> "reverse KL is 'mode-seeking' — it learns one specific behavior (the teacher's) rather than spreading its distribution across many suboptimal options."
 
-**这个 demo 里 K_p=3, K_q=1 的场景**，就是那个思想的一维标量玩具版：
-- 教师 = p（三峰混合，其中每个峰可以想象成一种"合理的行为策略"）
-- 学生 = q（容量不够，只能挑一个）
-- Reverse KL 让 q 果断挑一个峰 → 得到一个**清晰、一致**的策略
-- Forward KL 让 q 摊平覆盖三峰 → 得到一个**含糊、平均**的策略；LLM 里表现为回答风格摇摆、编造中间物
+**This demo's `K_p=3, K_q=1` configuration** is the one-dimensional scalar toy version of that idea:
+- Teacher = p (a three-mode mixture; each mode can be imagined as a "valid behavior policy")
+- Student = q (insufficient capacity — can only pick one mode)
+- Reverse KL makes q commit to one peak → a **crisp, consistent** policy
+- Forward KL makes q spread out to cover all three peaks → a **fuzzy, averaged** policy; in LLMs, this manifests as wavering answer styles or hallucinated intermediate outputs
 
-> **但请注意**：这只是"loss 形式偏好"层面的类比。真实 LLM 蒸馏中 reverse KL 好不好用还取决于教师质量、学生容量、rollout 长度、KL 权重系数、其他正则项等。**不能把这个一维玩具的结果直接外推**——它是"帮你建立直觉"，不是"证明 reverse KL 就是万能药"。
+> **But note**: this is a "loss-form tendency" analogy only. Whether reverse KL actually works in real LLM distillation depends on teacher quality, student capacity, rollout length, KL coefficient, and many other regularizers. **Do not extrapolate this 1D toy result directly** — it builds intuition, it doesn't prove that reverse KL is a silver bullet.
 
-## 展示效果
+## What You'll See
 
-推荐配置来直观感受差异：
+Recommended configurations to feel the difference:
 
-| 场景 | K_p | K_q | 现象 |
+| Scenario | K_p | K_q | Observation |
 |---|---|---|---|
-| ★ 经典对比 | 3 | 1 | Reverse KL 收缩到某一个峰；Forward KL 拉宽一个大高斯盖住三个峰 |
-| 部分覆盖 | 5 | 2 | Reverse KL 精准落在两个峰上；Forward KL 试图摊平所有五峰 |
-| 充足容量 | 4 | 4 | 两种 KL 均能较好拟合（作为对照组） |
+| ★ Classic contrast | 3 | 1 | Reverse KL collapses to one peak; forward KL stretches into a wide Gaussian covering all three |
+| Partial coverage | 5 | 2 | Reverse KL lands precisely on two peaks; forward KL tries to spread over all five |
+| Sufficient capacity | 4 | 4 | Both KLs fit well (control condition) |
 
-## ⚠ 复杂性说明：最终行为并非只由 KL 方向决定
+## ⚠ Complexity Note: Final Behavior is Not Determined by KL Direction Alone
 
-上文的 "mode-seeking / mode-covering" 是**倾向性表述**，是把复杂问题**极端化**得到的直觉。真实实验里，你会看到很多不符合这个"教科书图示"的现象。**最终拟合形态由以下因素共同决定**：
+The "mode-seeking / mode-covering" framing above is a **directional tendency**, obtained by taking the problem to an extreme. In real experiments you'll see many phenomena that don't match the "textbook picture." **The final fit is jointly determined by**:
 
-### 1. 模型容量 (K_q)
-- 当 q 的容量足够 (K_q ≥ K_p)，**两种 KL 都能拟合准确**，"mode-seeking vs mode-covering" 的差异会消失。这时 reverse KL 也覆盖所有 mode，因为最优解就是 q = p。
-- 差异只在 **q 容量不足 (K_q < K_p)** 时才明显。
+### 1. Model capacity (K_q)
+- When q has enough capacity (K_q ≥ K_p), **both KLs fit accurately** and the "mode-seeking vs mode-covering" difference vanishes. Reverse KL also covers all modes here — because the optimum is q = p.
+- The difference only manifests clearly when **q is under-parameterized (K_q < K_p)**.
 
-### 2. 目标分布的形状
-- **mode 之间重叠越多** → forward KL 用一个宽高斯覆盖的"欺骗性"越强，看起来越像 mode-seeking
-- **mode 之间距离越远、权重越不均匀** → forward KL 会更倾向"重点覆盖大权重 mode"，而非平均分配
-- 我们 demo 里 σ=0.6 让峰足够窄；如果把 σ 调到 2.0，你会发现 forward KL 的 q 甚至能塌缩到单峰（因为一个大高斯就能"够好地"覆盖已经混在一起的 mode）
+### 2. Target distribution shape
+- **More mode overlap** → forward KL's "one wide Gaussian" fit looks deceptively like mode-seeking
+- **Larger mode separation and uneven weights** → forward KL tends to "concentrate on high-weight modes" rather than spread evenly
+- Our demo uses σ=0.6 for narrow, well-separated peaks; if you set σ=2.0, forward KL's q can even collapse to a single peak, because one wide Gaussian already covers the merged mass "well enough."
 
-### 3. 优化超参数
-- **学习率**：太大 → 直接跳过某个 mode；太小 → 停在初始位置附近的局部最优
-- **初始化**：q 分量的初始 μ 分布决定了它们各自"被吸引"到哪个 p 峰。同一组超参数不同随机种子，reverse KL 可能挑不同的 mode
-- **迭代步数**：500 步 vs 5000 步的结果可能完全不同——reverse KL 在早期常表现为 mode-covering，收敛后才逐渐 mode-seeking
+### 3. Optimization hyperparameters
+- **Learning rate**: too high → skip modes entirely; too low → stuck near the initialization
+- **Initialization**: q's component means at init determine which p-peaks they get pulled toward. Same hyperparameters + different seeds → reverse KL can pick different modes
+- **Iteration count**: 500 steps and 5000 steps can give completely different results — reverse KL often behaves mode-covering early and only becomes mode-seeking after convergence
 
-### 4. 局部最优
-- KL loss 在混合模型下**极度非凸**。两个 q 分量重合到同一个 p 峰上（另外的 p 峰无人问津）是一个非常常见的**合法局部最优**——不是 bug，是数学
-- 增加 q 容量并不保证解决：K_q = K_p = 5 时也常见"3 个分量挤同一个峰、2 个 mode 被漏掉"
-- 传统 GMM-EM 里的 K-means 初始化、多次重启选最优等技巧，本质上都在对抗这个问题
+### 4. Local optima
+- The KL loss over mixture models is **highly non-convex**. Two q-components collapsing onto the same p-peak (leaving other p-peaks orphaned) is a very common, mathematically **legitimate local optimum** — not a bug
+- More capacity does not guarantee escape: even K_q = K_p = 5 often produces "3 components clumped on one peak, 2 modes missed"
+- Classical GMM-EM tricks (k-means init, multi-restart) exist specifically to fight this problem
 
-### 5. 采样方式（真实 VI 中）
-本 demo 用**数值积分**求 KL，梯度精确无偏。真实 VI/RL 里 KL 只能靠**蒙特卡洛**估计，会引入：
-- 高方差（尤其 reverse KL 的重要性权重问题）
-- 估计量偏差（Jensen 不等式）
-- 训练不稳定（这也是为什么 PPO 等算法要用 clip、TRPO 要用 trust region）
+### 5. Sampling method (in real VI)
+This demo computes KL by **numerical integration** — the gradient is exact and unbiased. In real VI/RL, KL can only be estimated by **Monte Carlo**, which introduces:
+- High variance (reverse KL suffers especially from importance-weight blow-ups)
+- Estimator bias (Jensen's inequality)
+- Training instability (which is exactly why PPO uses clipping, TRPO uses trust regions, etc.)
 
-### 一句话总结
-> **"Reverse KL 是 mode-seeking" 是关于"损失函数的偏好方向"的定性表述，不是"实际优化结果"的定量保证**。
-> 实际能观测到什么行为，是 loss × 模型 × 数据 × 优化器 × 随机性 五者的联合结果。
-> 这个 demo 展示的是"最容易复现的极端案例"，不是"永远会发生的规律"。
+### One-line summary
+> **"Reverse KL is mode-seeking" is a qualitative statement about the loss function's preference — not a quantitative guarantee about the optimization outcome.**
+> What you actually observe is the joint result of loss × model × data × optimizer × randomness.
+> This demo shows the **easiest-to-reproduce extreme case**, not a universal rule.
 
-**建议动手实验**：把 K_p=5, K_q=3 跑几十次（每次刷新一下重启训练），你会看到 reverse KL 有时挑 3 个左边 mode、有时挑 3 个右边、偶尔还会有分量重合到同一个峰。这种随机性正是"复杂性"的一部分。
+**Try it empirically**: run K_p=5, K_q=3 a few dozen times (refresh + restart training each time). You'll see reverse KL sometimes pick the three left modes, sometimes the three right, and occasionally collapse two components onto the same peak. That randomness *is* part of the complexity.
 
-
+## Directory Layout
 
 ```
 kl-viz/
 ├── backend/
-│   ├── app.py           # FastAPI + WebSocket + PyTorch，数值积分求 KL
+│   ├── app.py           # FastAPI + WebSocket + PyTorch, KL via numerical integration
 │   └── requirements.txt
 ├── frontend/
-│   └── index.html       # 纯 HTML/Canvas + MathJax，无构建
-├── run.sh               # 一键启动脚本
-└── README.md
+│   └── index.html       # Vanilla HTML/Canvas + MathJax, no build tool
+├── run.sh               # One-command launcher
+├── README.md            # This file (English)
+└── README.zh-CN.md      # Chinese version
 ```
 
-## 数学
+## Mathematics
 
-**目标分布** p(x) — 固定的高斯混合：
+**Target distribution** p(x) — fixed Gaussian mixture:
 
 $$p(x) = \sum_{k=1}^{K_p} w_k \, \mathcal{N}(x \mid \mu_k, \sigma_k^2)$$
 
-代码中 μ_k 在 [-4·(K_p−1)/2, +4·(K_p−1)/2] 等距取值，σ_k = 0.6，w_k = 1/K_p。
+In code, μ_k is placed uniformly on [-4·(K_p−1)/2, +4·(K_p−1)/2], σ_k = 0.6, w_k = 1/K_p.
 
-**变分分布** q(x; θ) — 可训练的高斯混合，参数 θ = {m_j, s_j, π_j}：
+**Variational distribution** q(x; θ) — trainable Gaussian mixture with parameters θ = {m_j, s_j, π_j}:
 
 $$q(x;\theta) = \sum_{j=1}^{K_q} \pi_j \, \mathcal{N}(x \mid m_j, s_j^2)$$
 
-**两种 KL** 都通过**数值积分**（梯形法则，2000 点密网格）在 PyTorch 中求得——由于一维、密度都是解析形式，无需蒙特卡洛采样，梯度对 θ 自动回传：
+**Both KLs** are computed by **numerical integration** (trapezoidal rule, 2000-point dense grid) in PyTorch. Because the problem is 1D and both densities are analytic, no Monte Carlo sampling is needed, and gradients through θ come from autograd:
 
 $$D_\text{KL}(q\|p) = \int q(x) \log \tfrac{q(x)}{p(x)} \, dx \qquad D_\text{KL}(p\|q) = \int p(x) \log \tfrac{p(x)}{q(x)} \, dx$$
 
-**为什么不采样？** 真实 VI 里 p 通常只有未归一化形式，必须靠 MC；这里我们两个都是自定 GMM，数值积分更稳定，`loss ≥ 0` 严格成立，也避免了 log(0) 溢出。README 结尾有关于这个选择的讨论。
+**Why not sample?** In real VI, p is typically only known up to normalization, so MC is unavoidable. Here both p and q are our own GMMs — numerical integration is more stable, `loss ≥ 0` holds strictly, and there's no log(0) blow-up. See the implementation notes at the end for a discussion.
 
-## 启动
+## Quick Start
 
 ```bash
 git clone <this-repo>
@@ -122,26 +125,26 @@ cd kl-viz
 ./run.sh
 ```
 
-首次运行会自动创建 venv 并安装 torch/fastapi（大约几分钟）。启动后打开 <http://127.0.0.1:8000>（如果端口被占用，改 `run.sh` 里的 `--port`）。
+First run creates a venv and installs torch/fastapi (takes a few minutes). Once running, open <http://127.0.0.1:8000> (change `--port` in `run.sh` if that port is occupied).
 
-## 用法
+## Usage
 
-1. 顶部 slider 选 K_p (1–6) 和 K_q (1–6)
-2. 按钮：
-   - **Reverse KL** — 单独训一个 reverse KL 拟合
-   - **Forward KL** — 单独训一个 forward KL 拟合
-   - **同时对比** — 两个 WebSocket 并行运行，在同一张图上叠画红/绿两条 q 曲线
-3. 观察上图（密度曲线）和下图（loss 下降）
+1. Use the top sliders to pick K_p (1–6) and K_q (1–6)
+2. Buttons:
+   - **Reverse KL** — train a single reverse-KL fit
+   - **Forward KL** — train a single forward-KL fit
+   - **Compare Both** — open two WebSockets in parallel, overlay red/green q-curves on the same plot
+3. Watch the top panel (density curves) and the bottom panel (loss over steps)
 
-## 实现要点
+## Implementation Highlights
 
-- **数值积分 vs MC 采样**：早期版本用 Gumbel-Softmax reparam 从 q 采样估计 reverse KL，遇到过 `log q(x_soft) → -∞` 的经典陷阱（soft 采样点 ≠ 真实混合密度点）。改成数值积分后 loss 严格非负、光滑无噪
-- **σ clamp**：训练中 σ 被 clamp 到 [0.05, 20]，防止梯度爆炸
-- **q 初始化**：分量均值初始范围跟随 p 的展宽，避免所有分量挤在 [-3, 3]
-- **前端零依赖**：Canvas 手绘，MathJax 从 CDN 加载公式，无 webpack/npm
+- **Numerical integration vs MC sampling**: An earlier version estimated reverse KL by drawing Gumbel-Softmax reparameterized samples from q. This hit the classic pitfall of `log q(x_soft) → -∞` (the soft mixture-sample point ≠ a true mixture-density sample point). Switching to numerical integration made the loss strictly non-negative, smooth, and noise-free.
+- **σ clamping**: σ is clamped to [0.05, 20] during training to prevent gradient explosion
+- **q initialization**: component means initialize over a range that scales with p's spread, avoiding all components getting stuck inside [-3, 3]
+- **Zero frontend dependencies**: hand-drawn Canvas, MathJax loaded from CDN — no webpack, no npm
 
-## 参考
+## References
 
-- Eric Jang 的博文 — <https://blog.evjang.com/2016/08/variational-bayes.html>
+- Eric Jang's post — <https://blog.evjang.com/2016/08/variational-bayes.html>
 - Thinking Machines · On-Policy Distillation — <https://thinkingmachines.ai/blog/on-policy-distillation/>
-- Bishop, *PRML*, §10.1（变分推断章节，reverse/forward KL 的经典图示就在这里）
+- Bishop, *PRML*, §10.1 (variational inference chapter — the canonical reverse/forward KL figure lives here)
