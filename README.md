@@ -2,6 +2,8 @@
 
 [中文文档 (Chinese README)](./README.zh-CN.md)
 
+🎮 **Live demo**: <https://qiangliu.net/reverse-vs-forward-kl-viz/>
+
 An interactive demo that visualizes the **directional tendencies** of **reverse KL (q‖p)** and **forward KL (p‖q)** when fitting a multi-modal target distribution: **mode-seeking** vs **mode-covering**.
 
 **Zero-dependency, browser-only** — a single `index.html` file runs the gradient descent, computes KL by numerical integration, and draws the density / loss curves on Canvas. No backend, no npm, no build tools. Open the file directly, or host it as a static page (GitHub Pages works).

@@ -2,6 +2,8 @@
 
 [English README](./README.md)
 
+🎮 **在线体验**：<https://qiangliu.net/reverse-vs-forward-kl-viz/>
+
 一个交互式 demo，直观展示 **reverse KL(q‖p)** 和 **forward KL(p‖q)** 在拟合多模态分布时的**典型倾向**：**mode-seeking** vs **mode-covering**。
 
 **零依赖、纯前端**——单个 `index.html` 文件在浏览器里完成梯度下降、数值积分求 KL、Canvas 绘制密度与 loss 曲线。无后端、无 npm、无构建工具，双击 HTML 即可运行，也可以直接部署到 GitHub Pages 等静态托管。
