@@ -184,6 +184,7 @@ class TrainConfig:
     lr: float = 0.05
     n_samples: int = 512
     send_every: int = 2     # push a frame every N steps
+    seed: int | None = None # None -> nondeterministic init
 
 
 def build_grid(p: TargetMixture, extra: float = 3.0, n: int = 400) -> torch.Tensor:
@@ -194,6 +195,10 @@ def build_grid(p: TargetMixture, extra: float = 3.0, n: int = 400) -> torch.Tens
 
 async def run_training(ws: WebSocket, cfg: TrainConfig):
     device = "cpu"
+    # Seed torch so that q's random init is reproducible when the user
+    # provides one. None -> nondeterministic (fresh randomness each run).
+    if cfg.seed is not None:
+        torch.manual_seed(cfg.seed)
     p = TargetMixture(cfg.target_modes, device=device)
     # Match q's init range to p's spread + some margin so all components start
     # inside the region where p has mass.
@@ -284,6 +289,7 @@ async def ws_train(ws: WebSocket):
                     lr=float(payload.get("lr", 0.05)),
                     n_samples=int(payload.get("n_samples", 512)),
                     send_every=int(payload.get("send_every", 2)),
+                    seed=(int(payload["seed"]) if payload.get("seed") not in (None, "", "null") else None),
                 )
                 await run_training(ws, cfg)
             elif payload.get("action") == "ping":

@@ -127,8 +127,8 @@
           <input type="number" id="send_every" value="2" min="1" max="20" step="1" />
         </div>
         <div>
-          <label>&nbsp;</label>
-          <div style="font-size:11px;color:var(--muted);padding-top:8px" data-i18n="panel.integNote">已改用数值积分，无采样噪声</div>
+          <label data-i18n="panel.seed">随机种子（留空=真随机）</label>
+          <input type="number" id="seed" placeholder="e.g. 42" />
         </div>
       </div>
 
@@ -238,6 +238,7 @@ const I18N = {
     'panel.steps': '迭代步数',
     'panel.lr': '学习率',
     'panel.pushEvery': '推送间隔',
+    'panel.seed': '随机种子（留空=真随机）',
     'panel.integNote': '已改用数值积分，无采样噪声',
     'panel.btnBoth': '同时对比 (双通道)',
     'panel.statusIdle': '未连接',
@@ -268,6 +269,7 @@ const I18N = {
     'panel.steps': 'Steps',
     'panel.lr': 'Learning rate',
     'panel.pushEvery': 'Push every',
+    'panel.seed': 'Random seed (empty = nondeterministic)',
     'panel.integNote': 'Now using numerical integration — no sampling noise',
     'panel.btnBoth': 'Compare Both (dual channel)',
     'panel.statusIdle': 'Not connected',
@@ -512,6 +514,7 @@ function startRun(kl_type) {
       steps: +$('steps').value,
       lr: +$('lr').value,
       send_every: +$('send_every').value,
+      seed: $('seed').value === '' ? null : +$('seed').value,
     }));
   };
   ws.onmessage = ev => {
