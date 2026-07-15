@@ -26,16 +26,15 @@ The core argument in Thinking Machines' post is that LLM distillation should use
 | Math form | $\mathbb{E}_{x\sim p_{teacher}}[-\log q_{student}(x)]$ | $\mathbb{E}_{x\sim q_{student}}[\log q - \log p_{teacher}]$ |
 | Behavioral tendency | **Mode-covering** — cover all teacher modes, produce an "averaged" policy | **Mode-seeking** — commit to one optimal teacher mode, avoid mixed policies |
 | Distribution shift | Severe (student ends up in states the teacher never visited) | None (data comes from the student itself) |
-| Information density | O(N) bits/episode, dense per-token | Same |
 
-Direct quote from their post:
+Paraphrased from their post:
 > "reverse KL is 'mode-seeking' — it learns one specific behavior (the teacher's) rather than spreading its distribution across many suboptimal options."
 
 **This demo's `K_p=3, K_q=1` configuration** is the one-dimensional scalar toy version of that idea:
 - Teacher = p (a three-mode mixture; each mode can be imagined as a "valid behavior policy")
 - Student = q (insufficient capacity — can only pick one mode)
 - Reverse KL makes q commit to one peak → a **crisp, consistent** policy
-- Forward KL makes q spread out to cover all three peaks → a **fuzzy, averaged** policy; in LLMs, this manifests as wavering answer styles or hallucinated intermediate outputs
+- Forward KL makes q spread out to cover all three peaks → a **fuzzy, averaged** policy
 
 > **But note**: this is a "loss-form tendency" analogy only. Whether reverse KL actually works in real LLM distillation depends on teacher quality, student capacity, rollout length, KL coefficient, and many other regularizers. **Do not extrapolate this 1D toy result directly** — it builds intuition, it doesn't prove that reverse KL is a silver bullet.
 
@@ -58,14 +57,14 @@ The "mode-seeking / mode-covering" framing above is a **directional tendency**, 
 - The difference only manifests clearly when **q is under-parameterized (K_q < K_p)**.
 
 ### 2. Target distribution shape
-- **More mode overlap** → forward KL's "one wide Gaussian" fit looks deceptively like mode-seeking
-- **Larger mode separation and uneven weights** → forward KL tends to "concentrate on high-weight modes" rather than spread evenly
-- Our demo uses σ=0.6 for narrow, well-separated peaks; if you set σ=2.0, forward KL's q can even collapse to a single peak, because one wide Gaussian already covers the merged mass "well enough."
+- Intuitively: **larger mode separation and more uniform weights** → the mode-seeking / mode-covering visual difference becomes more dramatic
+- Conversely, when modes overlap heavily or σ is large relative to spacing, p itself is already "blurred together" and the two KL optima look more similar
+- **These are qualitative arguments from the definition of KL — verify empirically in the UI** (e.g., change σ in `TargetMixture` from 0.6 to 2.0 and see what happens)
 
 ### 3. Optimization hyperparameters
 - **Learning rate**: too high → skip modes entirely; too low → stuck near the initialization
 - **Initialization**: q's component means at init determine which p-peaks they get pulled toward. Same hyperparameters + different seeds → reverse KL can pick different modes
-- **Iteration count**: 500 steps and 5000 steps can give completely different results — reverse KL often behaves mode-covering early and only becomes mode-seeking after convergence
+- **Iteration count**: too few steps and you may see an intermediate state; the characteristic mode-seeking / mode-covering shape only emerges after convergence
 
 ### 4. Local optima
 - The KL loss over mixture models is **highly non-convex**. Two q-components collapsing onto the same p-peak (leaving other p-peaks orphaned) is a very common, mathematically **legitimate local optimum** — not a bug
@@ -74,9 +73,8 @@ The "mode-seeking / mode-covering" framing above is a **directional tendency**, 
 
 ### 5. Sampling method (in real VI)
 This demo computes KL by **numerical integration** — the gradient is exact and unbiased. In real VI/RL, KL can only be estimated by **Monte Carlo**, which introduces:
-- High variance (reverse KL suffers especially from importance-weight blow-ups)
-- Estimator bias (Jensen's inequality)
-- Training instability (which is exactly why PPO uses clipping, TRPO uses trust regions, etc.)
+- High variance (reverse KL is especially prone to blow-ups when a q sample lands in a region where p has near-zero density)
+- Estimator bias and instability, motivating extra regularization or constraints in many RL/VI algorithms (PPO clipping, TRPO trust regions, etc.)
 
 ### One-line summary
 > **"Reverse KL is mode-seeking" is a qualitative statement about the loss function's preference — not a quantitative guarantee about the optimization outcome.**
@@ -138,7 +136,7 @@ First run creates a venv and installs torch/fastapi (takes a few minutes). Once 
 
 ## Implementation Highlights
 
-- **Numerical integration vs MC sampling**: An earlier version estimated reverse KL by drawing Gumbel-Softmax reparameterized samples from q. This hit the classic pitfall of `log q(x_soft) → -∞` (the soft mixture-sample point ≠ a true mixture-density sample point). Switching to numerical integration made the loss strictly non-negative, smooth, and noise-free.
+- **Numerical integration vs MC sampling**: An earlier version estimated reverse KL by drawing Gumbel-Softmax reparameterized samples from q. This hit a numerical trap where `log q(x_soft) → -∞` (the soft mixture-sample point ≠ a true mixture-density sample point). Switching to numerical integration made the loss strictly non-negative, smooth, and noise-free.
 - **σ clamping**: σ is clamped to [0.05, 20] during training to prevent gradient explosion
 - **q initialization**: component means initialize over a range that scales with p's spread, avoiding all components getting stuck inside [-3, 3]
 - **Zero frontend dependencies**: hand-drawn Canvas, MathJax loaded from CDN — no webpack, no npm
@@ -147,4 +145,4 @@ First run creates a venv and installs torch/fastapi (takes a few minutes). Once 
 
 - Eric Jang's post — <https://blog.evjang.com/2016/08/variational-bayes.html>
 - Thinking Machines · On-Policy Distillation — <https://thinkingmachines.ai/blog/on-policy-distillation/>
-- Bishop, *PRML*, §10.1 (variational inference chapter — the canonical reverse/forward KL figure lives here)
+- Bishop, *PRML*, Chapter 10 (variational inference, includes the canonical reverse KL vs forward KL comparison figure)
