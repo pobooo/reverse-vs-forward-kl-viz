@@ -113,11 +113,11 @@
       <div class="row">
         <div>
           <label data-i18n="panel.steps">迭代步数</label>
-          <input type="number" id="steps" value="400" min="50" max="2000" step="50" />
+          <input type="number" id="steps" value="2000" min="50" max="10000" step="100" />
         </div>
         <div>
           <label data-i18n="panel.lr">学习率</label>
-          <input type="number" id="lr" value="0.05" min="0.001" max="0.5" step="0.005" />
+          <input type="number" id="lr" value="0.01" min="0.001" max="0.5" step="0.005" />
         </div>
       </div>
 
@@ -492,59 +492,332 @@ window.addEventListener('resize', redraw);
 // ---------------------------------------------------------------------------
 // WebSocket driver
 // ---------------------------------------------------------------------------
-function wsUrl() {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${location.host}/ws/train`;
+// ---------------------------------------------------------------------------
+// Pure-JS trainer: Gaussian mixtures + hand-derived gradients + Adam + trapezoidal KL.
+// ---------------------------------------------------------------------------
+
+// Simple seedable PRNG (mulberry32) so the "seed" input works.
+function makeRng(seed) {
+  let s = (seed | 0) || 1;
+  return function() {
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function randNorm(rand) {
+  // Box-Muller
+  const u1 = Math.max(rand(), 1e-12), u2 = rand();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+const LOG_2PI = Math.log(2 * Math.PI);
+
+function buildTarget(K) {
+  // Match backend: mus evenly spaced on [-4*(K-1)/2, +4*(K-1)/2], sigma=0.6, uniform weights.
+  const mus = new Float64Array(K);
+  const sigmas = new Float64Array(K);
+  const weights = new Float64Array(K);
+  const half = 4 * (K - 1) / 2;
+  for (let k = 0; k < K; k++) {
+    mus[k] = K === 1 ? 0 : (-half + (2 * half * k) / (K - 1));
+    sigmas[k] = 0.6;
+    weights[k] = 1 / K;
+  }
+  return { mus, sigmas, weights };
+}
+
+function buildQ(Kq, initRange, rand) {
+  // Mirror backend init: linspace(-R, R) + 0.15 * spacing * randn
+  const mus = new Float64Array(Kq);
+  const logSigmas = new Float64Array(Kq);
+  const logits = new Float64Array(Kq);
+  const spacing = (2 * initRange) / Math.max(Kq - 1, 1);
+  for (let j = 0; j < Kq; j++) {
+    const base = Kq === 1 ? 0 : (-initRange + (2 * initRange * j) / (Kq - 1));
+    mus[j] = base + 0.15 * spacing * randNorm(rand);
+    logSigmas[j] = 0.0;      // sigma = 1
+    logits[j] = 0.0;         // uniform weights
+  }
+  return { mus, logSigmas, logits };
+}
+
+// Softmax with numerical stability. Returns Float64Array.
+function softmax(a) {
+  let m = -Infinity;
+  for (let i = 0; i < a.length; i++) if (a[i] > m) m = a[i];
+  const out = new Float64Array(a.length);
+  let s = 0;
+  for (let i = 0; i < a.length; i++) { out[i] = Math.exp(a[i] - m); s += out[i]; }
+  for (let i = 0; i < a.length; i++) out[i] /= s;
+  return out;
+}
+
+function linspace(lo, hi, n) {
+  const out = new Float64Array(n);
+  for (let i = 0; i < n; i++) out[i] = lo + (hi - lo) * i / (n - 1);
+  return out;
+}
+
+// Gaussian pdf N(x | mu, sigma)
+function normPdf(x, mu, sigma) {
+  const d = x - mu;
+  return Math.exp(-0.5 * d * d / (sigma * sigma)) / (sigma * Math.sqrt(2 * Math.PI));
+}
+
+// Compute q(x) on grid + per-component pdf (Kq x N). Returns {pdf, comp, weights, sigmas}.
+function evalQ(q, grid) {
+  const Kq = q.mus.length, N = grid.length;
+  const sigmas = new Float64Array(Kq);
+  for (let j = 0; j < Kq; j++) {
+    let ls = q.logSigmas[j];
+    // Clamp: match backend log_sigma clamp [log(0.05), log(20)]
+    if (ls < Math.log(0.05)) ls = Math.log(0.05);
+    if (ls > Math.log(20.0)) ls = Math.log(20.0);
+    sigmas[j] = Math.exp(ls);
+  }
+  const weights = softmax(q.logits);
+  const comp = new Array(Kq);            // comp[j] = per-component pdf on grid, length N
+  for (let j = 0; j < Kq; j++) comp[j] = new Float64Array(N);
+  const pdf = new Float64Array(N);
+  for (let i = 0; i < N; i++) {
+    let s = 0;
+    for (let j = 0; j < Kq; j++) {
+      const v = normPdf(grid[i], q.mus[j], sigmas[j]);
+      comp[j][i] = v;
+      s += weights[j] * v;
+    }
+    pdf[i] = s;
+  }
+  return { pdf, comp, weights, sigmas };
+}
+
+// Same for the (fixed) target: only pdf needed.
+function evalPTarget(p, grid) {
+  const K = p.mus.length, N = grid.length;
+  const pdf = new Float64Array(N);
+  for (let i = 0; i < N; i++) {
+    let s = 0;
+    for (let k = 0; k < K; k++) s += p.weights[k] * normPdf(grid[i], p.mus[k], p.sigmas[k]);
+    pdf[i] = s;
+  }
+  return pdf;
+}
+
+// Trapezoidal integration on uniform grid.
+function trapz(y, dx) {
+  const n = y.length;
+  let s = 0.5 * (y[0] + y[n - 1]);
+  for (let i = 1; i < n - 1; i++) s += y[i];
+  return s * dx;
+}
+
+// Compute KL loss and gradients wrt {mus, logSigmas, logits}.
+// klType = 'reverse' -> D(q||p),  'forward' -> D(p||q)
+function computeLossAndGrads(q, qEval, pPdf, grid, klType) {
+  const N = grid.length;
+  const Kq = q.mus.length;
+  const dx = grid[1] - grid[0];
+  const { pdf: qPdf, comp, weights, sigmas } = qEval;
+  const eps = 1e-30;
+
+  // Precompute log q(x) - log p(x)
+  const logQ = new Float64Array(N);
+  const logP = new Float64Array(N);
+  for (let i = 0; i < N; i++) {
+    logQ[i] = Math.log(qPdf[i] + eps);
+    logP[i] = Math.log(pPdf[i] + eps);
+  }
+
+  // "Weight function" w(x) applied to dq/dtheta inside the integral:
+  //   reverse: L = integral q * (log q - log p) dx
+  //     dL/dtheta = integral (log q - log p + 1) * dq/dtheta dx
+  //   forward: L = -integral p * log q dx  (+ const)
+  //     dL/dtheta = -integral (p / q) * dq/dtheta dx
+  const w = new Float64Array(N);
+  let loss = 0;
+  if (klType === 'reverse') {
+    for (let i = 0; i < N; i++) {
+      const diff = logQ[i] - logP[i];
+      loss += qPdf[i] * diff;
+      w[i] = diff + 1;
+    }
+  } else {
+    for (let i = 0; i < N; i++) {
+      loss += pPdf[i] * (logP[i] - logQ[i]);
+      w[i] = -pPdf[i] / (qPdf[i] + eps);
+    }
+  }
+  loss *= dx;
+
+  // Gradients. Accumulate integrals in these buffers.
+  const gMu = new Float64Array(Kq);
+  const gLogS = new Float64Array(Kq);
+  const gLogit = new Float64Array(Kq);
+
+  // dq/dm_j = pi_j * phi_j * (x - m_j) / s_j^2
+  // dq/d(log s_j) = pi_j * phi_j * ((x-m_j)^2 / s_j^2 - 1)
+  // dq/dlogit_j  = pi_j * (phi_j - q)     (Jacobian of softmax collapsed)
+  const integrandMu = new Float64Array(N);
+  const integrandLS = new Float64Array(N);
+  const integrandLg = new Float64Array(N);
+
+  for (let j = 0; j < Kq; j++) {
+    const pi = weights[j], sj = sigmas[j], mj = q.mus[j];
+    const invS2 = 1 / (sj * sj);
+    for (let i = 0; i < N; i++) {
+      const phi = comp[j][i];
+      const d = grid[i] - mj;
+      const dq_dm = pi * phi * d * invS2;
+      const dq_dls = pi * phi * (d * d * invS2 - 1);
+      const dq_dl = pi * (phi - qPdf[i]);
+      integrandMu[i] = w[i] * dq_dm;
+      integrandLS[i] = w[i] * dq_dls;
+      integrandLg[i] = w[i] * dq_dl;
+    }
+    gMu[j] = trapz(integrandMu, dx);
+    gLogS[j] = trapz(integrandLS, dx);
+    gLogit[j] = trapz(integrandLg, dx);
+  }
+
+  return { loss, gMu, gLogS, gLogit };
+}
+
+// Adam optimizer state (per-parameter-array). One instance per Q.
+function makeAdam(shape, lr) {
+  return {
+    lr, b1: 0.9, b2: 0.999, eps: 1e-8, t: 0,
+    m_mus: new Float64Array(shape), v_mus: new Float64Array(shape),
+    m_ls:  new Float64Array(shape), v_ls:  new Float64Array(shape),
+    m_lg:  new Float64Array(shape), v_lg:  new Float64Array(shape),
+  };
+}
+function adamStep(state, q, grads, clipNorm = 5.0) {
+  // Optional global gradient-norm clip (matches backend clip_grad_norm_).
+  let total = 0;
+  for (let j = 0; j < grads.gMu.length; j++) {
+    total += grads.gMu[j] ** 2 + grads.gLogS[j] ** 2 + grads.gLogit[j] ** 2;
+  }
+  total = Math.sqrt(total);
+  const scale = total > clipNorm ? clipNorm / total : 1.0;
+
+  state.t += 1;
+  const { b1, b2, eps, lr, t } = state;
+  const bc1 = 1 - Math.pow(b1, t), bc2 = 1 - Math.pow(b2, t);
+  const apply = (params, grad, m, v) => {
+    for (let j = 0; j < params.length; j++) {
+      const g = grad[j] * scale;
+      m[j] = b1 * m[j] + (1 - b1) * g;
+      v[j] = b2 * v[j] + (1 - b2) * g * g;
+      const mh = m[j] / bc1, vh = v[j] / bc2;
+      params[j] -= lr * mh / (Math.sqrt(vh) + eps);
+    }
+  };
+  apply(q.mus,       grads.gMu,    state.m_mus, state.v_mus);
+  apply(q.logSigmas, grads.gLogS,  state.m_ls,  state.v_ls);
+  apply(q.logits,    grads.gLogit, state.m_lg,  state.v_lg);
+}
+
+// ---------------------------------------------------------------------------
+// Training runner: incremental via requestAnimationFrame so the UI stays live.
+// ---------------------------------------------------------------------------
+const runners = { reverse: null, forward: null };
+
+function stopRunner(klType) {
+  if (runners[klType]) {
+    runners[klType].stopped = true;
+    runners[klType] = null;
+  }
 }
 
 function startRun(kl_type) {
+  stopRunner(kl_type);
   state.q_pdf[kl_type] = null;
   state.loss_hist[kl_type] = [];
   state.running += 1;
   disableButtons(true);
-  setStatus(tr('panel.statusConnecting', { kl: kl_type }));
-  const ws = new WebSocket(wsUrl());
-  ws.onopen = () => {
-    setStatus(tr('panel.statusTraining', { kl: kl_type }));
-    ws.send(JSON.stringify({
-      action: 'start',
-      kl_type,
-      target_modes: +$('target_modes').value,
-      q_components: +$('q_components').value,
-      steps: +$('steps').value,
-      lr: +$('lr').value,
-      send_every: +$('send_every').value,
-      seed: $('seed').value === '' ? null : +$('seed').value,
-    }));
+  setStatus(tr('panel.statusTraining', { kl: kl_type }));
+
+  const cfg = {
+    target_modes: +$('target_modes').value,
+    q_components: +$('q_components').value,
+    steps: +$('steps').value,
+    lr: +$('lr').value,
+    send_every: +$('send_every').value,
+    seedRaw: $('seed').value,
   };
-  ws.onmessage = ev => {
-    const msg = JSON.parse(ev.data);
-    if (msg.type === 'init') {
-      state.grid = msg.grid;
-      state.p_pdf = msg.p_pdf;
-    } else if (msg.type === 'step') {
-      // Guard: replace NaN/Infinity/absurd values so a numerical blow-up can't destroy the plot.
-      state.q_pdf[kl_type] = msg.q_pdf.map(v => Number.isFinite(v) ? v : 0);
-      const l = msg.loss;
-      const safeLoss = (Number.isFinite(l) && Math.abs(l) < 1e6) ? l : null;
-      state.loss_hist[kl_type].push(safeLoss);
-      $('k-step').textContent = msg.step;
-      if (kl_type === 'reverse') $('k-loss-rev').textContent = msg.loss.toFixed(4);
-      else $('k-loss-fwd').textContent = msg.loss.toFixed(4);
-      redraw();
-    } else if (msg.type === 'done') {
-      ws.close();
+  const seed = cfg.seedRaw === '' ? ((Math.random() * 2 ** 31) | 0) : (+cfg.seedRaw);
+  const rand = makeRng(seed);
+
+  const p = buildTarget(cfg.target_modes);
+
+  // Init q with range matching p's extent (mirror backend).
+  const pExtent = Math.max(...p.mus.map(Math.abs)) + 2.0;
+  const q = buildQ(cfg.q_components, pExtent, rand);
+
+  // Plot grid (sparser for the frontend curve) + integration grid (denser).
+  const pMin = Math.min(...p.mus), pMax = Math.max(...p.mus);
+  const gridPlot = linspace(pMin - 3.0, pMax + 3.0, 400);
+  const gridInt  = linspace(pMin - 8.0, pMax + 8.0, 2000);
+  const pPdfInt  = evalPTarget(p, gridInt);
+  const pPdfPlot = evalPTarget(p, gridPlot);
+
+  // Seed the shared plot state (first time only per session).
+  if (!state.grid || state.grid.length !== gridPlot.length) {
+    state.grid = Array.from(gridPlot);
+    state.p_pdf = Array.from(pPdfPlot);
+  } else {
+    // Config changed (K_p might differ). Rebuild.
+    state.grid = Array.from(gridPlot);
+    state.p_pdf = Array.from(pPdfPlot);
+  }
+
+  const adam = makeAdam(q.mus.length, cfg.lr);
+  const runner = { stopped: false };
+  runners[kl_type] = runner;
+
+  let step = 0;
+  const totalSteps = cfg.steps;
+
+  function tick() {
+    if (runner.stopped) return;
+    // Do a small batch of steps per animation frame to stay responsive but move fast.
+    const stepsThisFrame = Math.min(8, totalSteps - step + 1);
+    let lastLoss = 0;
+    for (let s = 0; s < stepsThisFrame; s++) {
+      const qEval = evalQ(q, gridInt);
+      const grads = computeLossAndGrads(q, qEval, pPdfInt, gridInt, kl_type);
+      lastLoss = grads.loss;
+      if (step > 0) adamStep(adam, q, grads);
+      step += 1;
+      if (step > totalSteps) break;
     }
-  };
-  ws.onclose = () => {
-    state.running -= 1;
-    if (state.running <= 0) {
-      state.running = 0;
-      disableButtons(false);
-      setStatus(tr('panel.statusDone'));
+
+    // Evaluate q on the plotting grid and push a frame.
+    const qEvalPlot = evalQ(q, gridPlot);
+    const qArr = Array.from(qEvalPlot.pdf).map(v => Number.isFinite(v) ? v : 0);
+    const safeLoss = (Number.isFinite(lastLoss) && Math.abs(lastLoss) < 1e6) ? lastLoss : null;
+    state.q_pdf[kl_type] = qArr;
+    state.loss_hist[kl_type].push(safeLoss);
+    $('k-step').textContent = step;
+    if (kl_type === 'reverse') $('k-loss-rev').textContent = (safeLoss ?? 0).toFixed(4);
+    else $('k-loss-fwd').textContent = (safeLoss ?? 0).toFixed(4);
+    redraw();
+
+    if (step > totalSteps) {
+      runner.stopped = true;
+      runners[kl_type] = null;
+      state.running -= 1;
+      if (state.running <= 0) {
+        state.running = 0;
+        disableButtons(false);
+        setStatus(tr('panel.statusDone'));
+      }
+      return;
     }
-  };
-  ws.onerror = () => { setStatus(tr('panel.statusError')); };
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
 }
 
 $('btn-rev').onclick = () => { state.q_pdf.forward = null; state.loss_hist.forward = []; startRun('reverse'); };

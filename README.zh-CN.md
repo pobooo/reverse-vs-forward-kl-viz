@@ -4,7 +4,7 @@
 
 一个交互式 demo，直观展示 **reverse KL(q‖p)** 和 **forward KL(p‖q)** 在拟合多模态分布时的**典型倾向**：**mode-seeking** vs **mode-covering**。
 
-后端 PyTorch 做梯度下降，前端 Canvas 实时绘制密度曲线与 loss 曲线，通过 WebSocket 每步推送状态。
+**零依赖、纯前端**——单个 `index.html` 文件在浏览器里完成梯度下降、数值积分求 KL、Canvas 绘制密度与 loss 曲线。无后端、无 npm、无构建工具，双击 HTML 即可运行，也可以直接部署到 GitHub Pages 等静态托管。
 
 > **注意**：本 demo 用于建立"倾向性直觉"。真实场景下的最终拟合行为**远比一句 "mode-seeking / mode-covering" 复杂**，取决于超参数、模型容量、数据分布的多种因素。详见后文 [复杂性说明](#-复杂性说明最终行为并非只由-kl-方向决定)。
 
@@ -86,18 +86,17 @@ Thinking Machines 那篇博客的核心论点是：LLM 蒸馏该用**在策略 (
 
 **建议动手实验**：把 K_p=5, K_q=3 跑几十次（每次刷新一下重启训练），你会看到 reverse KL 有时挑 3 个左边 mode、有时挑 3 个右边、偶尔还会有分量重合到同一个峰。这种随机性正是"复杂性"的一部分。
 
-
+## 目录结构
 
 ```
 kl-viz/
-├── backend/
-│   ├── app.py           # FastAPI + WebSocket + PyTorch，数值积分求 KL
-│   └── requirements.txt
 ├── frontend/
-│   └── index.html       # 纯 HTML/Canvas + MathJax，无构建
-├── run.sh               # 一键启动脚本
-└── README.md
+│   └── index.html       # 全部实现：trainer + Canvas 绘图 + MathJax 公式
+├── README.md            # 英文版
+└── README.zh-CN.md      # 本文件（中文）
 ```
+
+就一个 HTML 文件。里面 `<script>` 大约 250 行原生 JS 实现了：高斯混合、手推解析梯度、Adam 优化器、梯形积分 KL、可复现的伪随机数发生器。
 
 ## 数学
 
@@ -111,37 +110,47 @@ $$p(x) = \sum_{k=1}^{K_p} w_k \, \mathcal{N}(x \mid \mu_k, \sigma_k^2)$$
 
 $$q(x;\theta) = \sum_{j=1}^{K_q} \pi_j \, \mathcal{N}(x \mid m_j, s_j^2)$$
 
-**两种 KL** 都通过**数值积分**（梯形法则，2000 点密网格）在 PyTorch 中求得——由于一维、密度都是解析形式，无需蒙特卡洛采样，梯度对 θ 自动回传：
+**两种 KL** 都通过**数值积分**（梯形法则，2000 点密网格）计算——由于一维、密度都是解析形式，无需蒙特卡洛采样；梯度对 θ 的公式**手工推导**，用有限差分做过一致性验证：
 
 $$D_\text{KL}(q\|p) = \int q(x) \log \tfrac{q(x)}{p(x)} \, dx \qquad D_\text{KL}(p\|q) = \int p(x) \log \tfrac{p(x)}{q(x)} \, dx$$
 
-**为什么不采样？** 真实 VI 里 p 通常只有未归一化形式，必须靠 MC；这里我们两个都是自定 GMM，数值积分更稳定，`loss ≥ 0` 严格成立，也避免了 log(0) 溢出。README 结尾有关于这个选择的讨论。
+**为什么不采样？** 真实 VI 里 p 通常只有未归一化形式，必须靠 MC；这里我们两个都是自定 GMM，数值积分更稳定，`loss ≥ 0` 严格成立，也避免了 log(0) 溢出。
 
 ## 启动
 
 ```bash
 git clone <this-repo>
 cd kl-viz
-./run.sh
+open frontend/index.html         # macOS
+# 或: xdg-open frontend/index.html   （Linux）
+# 或: start frontend/index.html      （Windows）
 ```
 
-首次运行会自动创建 venv 并安装 torch/fastapi（大约几分钟）。启动后打开 <http://127.0.0.1:8000>（如果端口被占用，改 `run.sh` 里的 `--port`）。
+也可以起个静态服务：
+```bash
+cd kl-viz/frontend && python3 -m http.server 8765
+# 然后访问 http://127.0.0.1:8765/
+```
+
+不需要 pip、venv、torch——一切在浏览器里跑。
 
 ## 用法
 
 1. 顶部 slider 选 K_p (1–6) 和 K_q (1–6)
-2. 按钮：
+2. 可选：填一个**随机种子**做可复现的实验（留空则每次真随机）
+3. 按钮：
    - **Reverse KL** — 单独训一个 reverse KL 拟合
    - **Forward KL** — 单独训一个 forward KL 拟合
-   - **同时对比** — 两个 WebSocket 并行运行，在同一张图上叠画红/绿两条 q 曲线
-3. 观察上图（密度曲线）和下图（loss 下降）
+   - **同时对比** — 两个 runner 通过 `requestAnimationFrame` 并行运行，在同一张图上叠画红/绿两条 q 曲线
+4. 观察上图（密度曲线）和下图（loss 下降）
 
 ## 实现要点
 
-- **数值积分 vs MC 采样**：早期版本用 Gumbel-Softmax reparam 从 q 采样估计 reverse KL，遇到过 `log q(x_soft) → -∞` 的数值陷阱（soft 采样点 ≠ 真实混合密度点）。改成数值积分后 loss 严格非负、光滑无噪
-- **σ clamp**：训练中 σ 被 clamp 到 [0.05, 20]，防止梯度爆炸
-- **q 初始化**：分量均值初始范围跟随 p 的展宽，避免所有分量挤在 [-3, 3]
-- **前端零依赖**：Canvas 手绘，MathJax 从 CDN 加载公式，无 webpack/npm
+- **手工推导的解析梯度**：不依赖任何 autograd 框架。`∂q/∂m_j`、`∂q/∂log s_j`、`∂q/∂logit_j` 都是闭式解。在约 100 组配置下用**有限差分**做过验证，只要积分网格宽到能容纳 q 的尾部，相对误差 ≤ 1e-8
+- **梯形积分**：2000 点密网格覆盖 p 范围外扩 ±8——精度足够让 `loss ≥ 0` 严格成立，无 MC 噪声
+- **σ clamp**：每次前向计算时 σ 被 clamp 到 [0.05, 20]，防止数值爆炸
+- **可播种 RNG**：内置 mulberry32 伪随机数生成器，填种子可精确复现，留空则每次探索不同的局部最优
+- **零依赖**：无构建、无 npm、无框架。MathJax 从 CDN 加载**仅用于渲染公式**——删掉它 demo 一样能用
 
 ## 参考
 

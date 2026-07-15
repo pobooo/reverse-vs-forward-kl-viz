@@ -4,7 +4,7 @@
 
 An interactive demo that visualizes the **directional tendencies** of **reverse KL (q‖p)** and **forward KL (p‖q)** when fitting a multi-modal target distribution: **mode-seeking** vs **mode-covering**.
 
-The backend runs PyTorch gradient descent; the frontend uses Canvas to draw density curves and loss curves in real time, streamed step-by-step over WebSocket.
+**Zero-dependency, browser-only** — a single `index.html` file runs the gradient descent, computes KL by numerical integration, and draws the density / loss curves on Canvas. No backend, no npm, no build tools. Open the file directly, or host it as a static page (GitHub Pages works).
 
 > **Important**: This demo is meant to build **intuition** about directional tendencies. In real-world settings, the final fit behavior is **far more complex** than a one-line "mode-seeking / mode-covering" summary — it depends on hyperparameters, model capacity, and data distribution. See the [Complexity Note](#-complexity-note-final-behavior-is-not-determined-by-kl-direction-alone) below.
 
@@ -90,15 +90,13 @@ This demo computes KL by **numerical integration** — the gradient is exact and
 
 ```
 kl-viz/
-├── backend/
-│   ├── app.py           # FastAPI + WebSocket + PyTorch, KL via numerical integration
-│   └── requirements.txt
 ├── frontend/
-│   └── index.html       # Vanilla HTML/Canvas + MathJax, no build tool
-├── run.sh               # One-command launcher
+│   └── index.html       # Everything: trainer + Canvas plots + MathJax formulas
 ├── README.md            # This file (English)
 └── README.zh-CN.md      # Chinese version
 ```
+
+That's it — one HTML file. The trainer (Gaussian mixture, hand-derived gradients, Adam optimizer, trapezoidal KL integration, seedable RNG) is ~250 lines of vanilla JS inside `<script>`.
 
 ## Mathematics
 
@@ -112,7 +110,7 @@ In code, μ_k is placed uniformly on [-4·(K_p−1)/2, +4·(K_p−1)/2], σ_k = 
 
 $$q(x;\theta) = \sum_{j=1}^{K_q} \pi_j \, \mathcal{N}(x \mid m_j, s_j^2)$$
 
-**Both KLs** are computed by **numerical integration** (trapezoidal rule, 2000-point dense grid) in PyTorch. Because the problem is 1D and both densities are analytic, no Monte Carlo sampling is needed, and gradients through θ come from autograd:
+**Both KLs** are computed by **numerical integration** (trapezoidal rule, 2000-point dense grid). Because the problem is 1D and both densities are analytic, no Monte Carlo sampling is needed; gradients w.r.t. θ are derived by hand and verified against finite differences:
 
 $$D_\text{KL}(q\|p) = \int q(x) \log \tfrac{q(x)}{p(x)} \, dx \qquad D_\text{KL}(p\|q) = \int p(x) \log \tfrac{p(x)}{q(x)} \, dx$$
 
@@ -123,26 +121,36 @@ $$D_\text{KL}(q\|p) = \int q(x) \log \tfrac{q(x)}{p(x)} \, dx \qquad D_\text{KL}
 ```bash
 git clone <this-repo>
 cd kl-viz
-./run.sh
+open frontend/index.html   # macOS
+# or: xdg-open frontend/index.html   (Linux)
+# or: start frontend/index.html      (Windows)
 ```
 
-First run creates a venv and installs torch/fastapi (takes a few minutes). Once running, open <http://127.0.0.1:8000> (change `--port` in `run.sh` if that port is occupied).
+Or serve it as a static site:
+```bash
+cd kl-viz/frontend && python3 -m http.server 8765
+# then open http://127.0.0.1:8765/
+```
+
+No pip, no venv, no torch — everything runs in the browser.
 
 ## Usage
 
 1. Use the top sliders to pick K_p (1–6) and K_q (1–6)
-2. Buttons:
+2. Optional: fill in a **random seed** for reproducible runs (leave blank for fresh randomness each time)
+3. Buttons:
    - **Reverse KL** — train a single reverse-KL fit
    - **Forward KL** — train a single forward-KL fit
-   - **Compare Both** — open two WebSockets in parallel, overlay red/green q-curves on the same plot
-3. Watch the top panel (density curves) and the bottom panel (loss over steps)
+   - **Compare Both** — run both in parallel via `requestAnimationFrame`, overlay red/green q-curves on the same plot
+4. Watch the top panel (density curves) and the bottom panel (loss over steps)
 
 ## Implementation Highlights
 
-- **Numerical integration vs MC sampling**: An earlier version estimated reverse KL by drawing Gumbel-Softmax reparameterized samples from q. This hit a numerical trap where `log q(x_soft) → -∞` (the soft mixture-sample point ≠ a true mixture-density sample point). Switching to numerical integration made the loss strictly non-negative, smooth, and noise-free.
-- **σ clamping**: σ is clamped to [0.05, 20] during training to prevent gradient explosion
-- **q initialization**: component means initialize over a range that scales with p's spread, avoiding all components getting stuck inside [-3, 3]
-- **Zero frontend dependencies**: hand-drawn Canvas, MathJax loaded from CDN — no webpack, no npm
+- **Hand-derived analytic gradients**: no autograd framework needed. `∂q/∂m_j`, `∂q/∂log s_j`, `∂q/∂logit_j` are computed in closed form. Verified against finite differences across ~100 configurations; when the integration grid is wide enough to contain q's tails, relative error is ≤ 1e-8.
+- **Trapezoidal integration on a dense grid** (2000 points spanning ±8 beyond p's range) — precise enough that `loss ≥ 0` holds strictly and there's no MC noise.
+- **σ clamping**: σ is clamped to [0.05, 20] each forward pass to prevent numerical blow-ups.
+- **Seedable RNG**: a mulberry32 PRNG lets you pin the initialization for reproducible runs, or leave blank to explore the local-optima landscape.
+- **Zero dependencies**: no build step, no npm, no framework. MathJax is loaded from a CDN only for pretty formula rendering; you can strip it and the demo still works.
 
 ## References
 
