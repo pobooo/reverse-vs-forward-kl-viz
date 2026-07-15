@@ -53,6 +53,24 @@ Recommended configurations to feel the difference (results depend on the random 
 
 **Tip**: set the seed to `42` to reproduce the table above; then try `7`, `123`, etc. to see how much variation exists for the same configuration. That variability is exactly what this demo aims to communicate.
 
+## 📚 The Textbook Example vs Real Behavior
+
+Most textbook and blog treatments of mode-seeking vs mode-covering use the same **minimal example**: a bimodal target `p` (two well-separated Gaussians) fit by a **unimodal** `q` (a single Gaussian). In that idealized case:
+
+- Reverse KL `q‖p` → `q` locks onto one of the two modes (mode-seeking)
+- Forward KL `p‖q` → `q` centers between the two modes with a wide σ, covering both (mode-covering)
+
+These pictures are so canonical they've become the *definition* of the two behaviors in most readers' minds. This demo can reproduce them (`K_p=2, K_q=1`) — and they are correct as far as they go.
+
+**But real problems rarely look like this.** As soon as you leave the "1-component q fitting a 2-mode p" setup, the picture gets much richer:
+
+- With **more target modes** (`K_p=5`), a single-component `q` in reverse KL still picks one mode, but *which* mode depends heavily on initialization — and forward KL's "big blob" solution starts to look nothing like the two-mode textbook diagram
+- With **more q components** (`K_q > 1`), both KLs can produce solutions that mix mode-seeking and mode-covering behavior in the same distribution — some `q` components lock onto a peak, others straddle two peaks
+- With **matched capacity** (`K_q = K_p`), both KLs should in principle give `q = p`, but they often land in **local optima** where two `q` components collapse onto the same peak and other modes are missed entirely
+- With **overlapping modes**, the sharp "one collapses / one spreads" contrast fades — both KLs produce broad-ish approximations that are hard to distinguish visually
+
+In other words, **the classic 2-mode / 1-component figure is a pedagogical extreme, not a generic prediction**. The demo below (with adjustable K_p and K_q up to 6, plus a random seed) exists precisely to let you explore the messier regime the textbooks skip. What emerges is that "mode-seeking vs mode-covering" is a useful *directional* summary of each KL's loss preferences — but the actual optimizer output is shaped by capacity, initialization, and local optima at least as much as by the choice of KL direction.
+
 ## ⚠ Complexity Note: Final Behavior is Not Determined by KL Direction Alone
 
 The "mode-seeking / mode-covering" framing above is a **directional tendency**, obtained by taking the problem to an extreme. In real experiments you'll see many phenomena that don't match the "textbook picture." **The final fit is jointly determined by**:
