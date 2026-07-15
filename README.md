@@ -40,13 +40,16 @@ Paraphrased from their post:
 
 ## What You'll See
 
-Recommended configurations to feel the difference:
+Recommended configurations to feel the difference (results depend on the random seed — the table describes **typical tendencies**, not deterministic outcomes):
 
-| Scenario | K_p | K_q | Observation |
+| Scenario | K_p | K_q | Common observation |
 |---|---|---|---|
-| ★ Classic contrast | 3 | 1 | Reverse KL collapses to one peak; forward KL stretches into a wide Gaussian covering all three |
-| Partial coverage | 5 | 2 | Reverse KL lands precisely on two peaks; forward KL tries to spread over all five |
-| Sufficient capacity | 4 | 4 | Both KLs fit well (control condition) |
+| ★ Classic contrast | 3 | 1 | Reverse KL collapses onto one peak; forward KL stretches into one wide Gaussian trying to cover all three |
+| Under-parameterized | 5 | 2 | Reverse KL usually places its two components on two different peaks; forward KL often ends up "one wide, one narrow" or two wide ones — the exact split depends on initialization |
+| Intermediate capacity | 6 | 5 | Interesting case: both KLs frequently **fall into local optima** — dropping a middle peak, or having multiple components collapse onto the same peak. See [Complexity Note](#-complexity-note-final-behavior-is-not-determined-by-kl-direction-alone) below |
+| Sufficient capacity | 4 | 4 | Both KLs fit well; the visual difference essentially vanishes (control condition) |
+
+**Tip**: set the seed to `42` to reproduce the table above; then try `7`, `123`, etc. to see how much variation exists for the same configuration. That variability is exactly what this demo aims to communicate.
 
 ## ⚠ Complexity Note: Final Behavior is Not Determined by KL Direction Alone
 
