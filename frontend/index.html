@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Reverse vs Forward KL · 多模态拟合可视化</title>
 <script>
   // MathJax config must be set before loading the script.
@@ -13,91 +14,149 @@
 <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
 <style>
   :root {
-    --bg: #0f1220;
-    --panel: #171a2e;
-    --text: #e8ecff;
-    --muted: #8a90b8;
-    --accent: #6ee7ff;
-    --p-color: #ffd166;
-    --q-rev: #ef476f;
-    --q-fwd: #06d6a0;
-    --grid: #2a2f4a;
+    --ink: #1a1916;
+    --muted: #5c5852;
+    --line: #ddd8cf;
+    --paper: #f7f3ec;
+    --card: #fffcf7;
+    --accent: #8f1d1d;
+    --navy: #1f3d5c;
+    --p-color: #1f3d5c;
+    --p-fill: rgba(31, 61, 92, 0.12);
+    --q-rev: #b3261e;
+    --q-fwd: #2a7a5a;
+    --grid: #ebe6dc;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC", "Noto Serif SC", serif;
+    --sans: "Avenir Next", -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; padding: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
-    background: var(--bg); color: var(--text);
+    font-family: var(--sans);
+    background: var(--paper); color: var(--ink);
   }
   header {
-    padding: 18px 24px; border-bottom: 1px solid var(--grid);
-    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
   }
-  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
-  header .sub { color: var(--muted); font-size: 13px; }
-  .lang-switch { display: flex; gap: 4px; margin-left: 10px; }
+  header .inner {
+    max-width: 1320px; margin: 0 auto; padding: 28px 28px 22px;
+    display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap;
+  }
+  header .titles { flex: 1; min-width: 280px; }
+  header .kicker {
+    margin: 0 0 8px; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent);
+  }
+  header h1 {
+    margin: 0 0 8px; font-family: var(--serif); font-size: clamp(26px, 3.4vw, 36px);
+    font-weight: 600; line-height: 1.2; letter-spacing: -0.01em;
+  }
+  header .sub { margin: 0; color: var(--muted); font-size: 15px; }
+  header .meta { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--muted); }
+  header .meta a { color: inherit; }
+  .lang-switch { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .lang-switch button {
-    background: transparent; color: var(--muted); border: 1px solid var(--grid);
-    padding: 4px 10px; font-size: 12px; font-weight: 500; border-radius: 4px;
-    cursor: pointer;
+    background: transparent; color: var(--muted); border: none; border-radius: 0;
+    padding: 5px 11px; font-size: 12px; font-weight: 500; cursor: pointer;
   }
-  .lang-switch button.active { background: var(--accent); color: #0f1220; border-color: var(--accent); }
+  .lang-switch button.active { background: var(--ink); color: var(--card); }
   main {
-    display: grid; grid-template-columns: 320px 1fr; gap: 18px;
-    padding: 18px 24px; max-width: 1400px; margin: 0 auto;
+    display: grid; grid-template-columns: 300px 1fr; gap: 22px; align-items: start;
+    padding: 24px 28px 48px; max-width: 1320px; margin: 0 auto;
   }
-  .panel { background: var(--panel); border-radius: 10px; padding: 16px 18px; }
-  .panel h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--accent); letter-spacing: .5px; }
-  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; }
+  .panel {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px;
+    position: sticky; top: 16px;
+  }
+  .panel h3 {
+    margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--accent);
+    letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+  label b { color: var(--ink); font-weight: 600; }
   input[type=number], select {
-    width: 100%; padding: 8px 10px; background: #0c0f1e; color: var(--text);
-    border: 1px solid var(--grid); border-radius: 6px; font-size: 13px;
+    width: 100%; padding: 8px 10px; background: #fff; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px; font: 14px var(--sans);
   }
-  input[type=range] { width: 100%; }
+  input[type=number]:focus { outline: none; border-color: var(--navy); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
   .row { display: flex; gap: 10px; }
-  .row > * { flex: 1; }
-  .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+  .row > * { flex: 1; min-width: 0; }
+  .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
   button {
-    padding: 10px 12px; border-radius: 6px; border: none; cursor: pointer;
-    font-size: 13px; font-weight: 600; color: #0f1220; transition: filter .15s;
+    padding: 10px 12px; border-radius: 6px; border: 1px solid transparent; cursor: pointer;
+    font: 600 13px var(--sans); color: #fff; transition: filter .15s, background .15s;
   }
-  button.rev { background: var(--q-rev); color: #fff; }
+  button.rev { background: var(--q-rev); }
   button.fwd { background: var(--q-fwd); }
-  button.both { grid-column: span 2; background: var(--accent); }
+  button.both { grid-column: span 2; background: var(--card); color: var(--ink); border-color: var(--ink); }
+  button.both:hover:not(:disabled) { background: var(--ink); color: var(--card); }
   button:disabled { opacity: .4; cursor: not-allowed; }
-  button:hover:not(:disabled) { filter: brightness(1.1); }
-  .status { margin-top: 12px; font-size: 12px; color: var(--muted); min-height: 18px; }
-  .plots { display: grid; grid-template-rows: auto 360px 200px; gap: 14px; }
-  .plot-wrap { background: var(--panel); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; }
+  button.rev:hover:not(:disabled), button.fwd:hover:not(:disabled) { filter: brightness(1.08); }
+  .status { margin-top: 12px; font-size: 13px; color: var(--muted); min-height: 18px; }
+  .kv {
+    display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0;
+    border-bottom: 1px dashed var(--line); color: var(--muted);
+  }
+  .kv:last-child { border-bottom: none; }
+  .kv b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .kv .dot { margin-right: 6px; }
+  .plots { display: grid; grid-template-rows: 420px 220px auto; gap: 16px; min-width: 0; }
+  .plot-wrap {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px 12px; display: flex; flex-direction: column;
+  }
   .plot-wrap canvas { flex: 1; min-height: 0; }
   canvas { display: block; width: 100%; height: 100%; }
-  .legend { display: flex; gap: 16px; font-size: 12px; margin-top: 6px; color: var(--muted); }
-  .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
-  .notes { font-size: 12px; color: var(--muted); line-height: 1.6; }
-  .notes code { background:#0c0f1e; padding: 1px 5px; border-radius: 3px; color: var(--accent); }
-  .kv { display:flex; justify-content: space-between; font-size:12px; margin:4px 0; }
-  .kv b { color: var(--text); font-weight:600; }
-  .formulas { background: var(--panel); border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; }
-  .formulas h3 { margin: 0 0 4px; font-size: 13px; color: var(--accent); }
-  .formulas .block { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 8px; }
-  .formulas .col { font-size: 12.5px; color: var(--text); line-height: 1.55; }
-  .formulas .col b { color: var(--accent); }
-  .formulas .col .tag { display:inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight:600; margin-right: 6px; }
-  .formulas .tag.rev { background: rgba(239,71,111,.25); color: var(--q-rev); }
-  .formulas .tag.fwd { background: rgba(6,214,160,.25); color: var(--q-fwd); }
-  .formulas mjx-container { color: var(--text) !important; }
-  .formulas .muted { color: var(--muted); font-size: 11.5px; }
-  @media (max-width: 900px) { .formulas .block { grid-template-columns: 1fr; } }
+  .legend { display: flex; gap: 18px; font-size: 13px; margin-top: 8px; color: var(--muted); flex-wrap: wrap; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  .formulas {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px 24px;
+    font-family: var(--serif);
+  }
+  .formulas h3 { margin: 0 0 4px; font-size: 20px; font-weight: 600; color: var(--ink); }
+  .formulas .block { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 12px; }
+  .formulas .col { font-size: 15px; color: var(--ink); line-height: 1.6; min-width: 0; }
+  .formulas .col b { color: var(--navy); }
+  .formulas .col .tag {
+    display: inline-block; padding: 1px 7px; border-radius: 4px; font: 600 12px var(--sans); margin-right: 6px;
+  }
+  .formulas .tag.rev { background: rgba(179, 38, 30, .1); color: var(--q-rev); }
+  .formulas .tag.fwd { background: rgba(42, 122, 90, .12); color: var(--q-fwd); }
+  .formulas mjx-container { color: var(--ink) !important; overflow-x: auto; overflow-y: hidden; }
+  .formulas .muted { color: var(--muted); font-size: 14px; line-height: 1.6; }
+  .formulas .note-box {
+    margin-top: 14px; padding: 10px 14px; background: color-mix(in srgb, var(--accent) 5%, var(--card));
+    border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0;
+  }
+  .formulas .note-box b:first-child { color: var(--accent); }
+  .formulas .refs { margin-top: 14px; font-size: 14px; color: var(--muted); }
+  .formulas .refs a { color: var(--navy); }
+  @media (max-width: 900px) {
+    main { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+    main > * { min-width: 0; }
+    header .inner { padding: 20px 16px 16px; }
+    .panel { position: static; }
+    .plots { grid-template-rows: 340px 200px auto; }
+    .formulas .block { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
   <header>
-    <h1 data-i18n="title">Reverse vs Forward KL · 多模态高斯拟合</h1>
-    <span class="sub" data-i18n="subtitle">Reverse KL(q‖p) 倾向 mode-seeking，Forward KL(p‖q) 倾向 mode-covering</span>
-    <span class="author-note" style="margin-left:auto;font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;">by <b style="color:var(--accent)">Qiang Liu</b></span>
-    <div class="lang-switch">
-      <button data-lang="zh">中</button>
-      <button data-lang="en">EN</button>
+    <div class="inner">
+      <div class="titles">
+        <p class="kicker">Interactive demo</p>
+        <h1 data-i18n="title">Reverse vs Forward KL · 多模态高斯拟合</h1>
+        <p class="sub" data-i18n="subtitle">固定目标分布 p(x)，训练 q(x) 去拟合它：Reverse KL(q‖p) 倾向 mode-seeking，Forward KL(p‖q) 倾向 mode-covering</p>
+      </div>
+      <div class="meta">
+        <span>by <a href="https://qiangliu.net">Qiang Liu</a></span>
+        <div class="lang-switch">
+          <button data-lang="zh">中</button>
+          <button data-lang="en">EN</button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -105,10 +164,10 @@
     <aside class="panel">
       <h3 data-i18n="panel.params">参数设置</h3>
 
-      <label><span data-i18n="panel.pModes">目标分布 p(x) 的 mode 数量</span>: <span id="pv">3</span></label>
+      <label><span data-i18n="panel.pModes">目标分布 p(x) 的 mode 数量</span>: <b id="pv">3</b></label>
       <input type="range" id="target_modes" min="1" max="6" value="3" />
 
-      <label><span data-i18n="panel.qComps">变分分布 q(x) 的高斯分量数</span>: <span id="qv">1</span></label>
+      <label><span data-i18n="panel.qComps">变分分布 q(x) 的高斯分量数</span>: <b id="qv">1</b></label>
       <input type="range" id="q_components" min="1" max="6" value="1" />
 
       <div class="row">
@@ -122,16 +181,8 @@
         </div>
       </div>
 
-      <div class="row">
-        <div>
-          <label data-i18n="panel.pushEvery">推送间隔</label>
-          <input type="number" id="send_every" value="2" min="1" max="20" step="1" />
-        </div>
-        <div>
-          <label data-i18n="panel.seed">随机种子（留空=真随机）</label>
-          <input type="number" id="seed" placeholder="e.g. 42" />
-        </div>
-      </div>
+      <label data-i18n="panel.seed">随机种子（留空=真随机）</label>
+      <input type="number" id="seed" placeholder="e.g. 42" />
 
       <div class="btn-group">
         <button class="rev" id="btn-rev">Reverse KL</button>
@@ -141,72 +192,13 @@
 
       <div class="status" id="status" data-i18n="panel.statusIdle">就绪</div>
 
-      <h3 style="margin-top:20px" data-i18n="panel.runState">运行状态</h3>
+      <h3 style="margin-top:22px" data-i18n="panel.runState">运行状态</h3>
       <div class="kv"><span>Step</span><b id="k-step">–</b></div>
-      <div class="kv"><span>Reverse KL Loss</span><b id="k-loss-rev">–</b></div>
-      <div class="kv"><span>Forward KL Loss</span><b id="k-loss-fwd">–</b></div>
-
-      <h3 style="margin-top:20px" data-i18n="panel.notesTitle">说明</h3>
-      <div class="notes" data-i18n-html="panel.notes">
-        <b>Reverse KL</b> = E<sub>q</sub>[log q − log p]：q 落在 p 为零的地方会被无穷惩罚，
-        所以 q 会退缩到 p 的某个 mode 上（mode-seeking / zero-forcing）。<br><br>
-        <b>Forward KL</b> = E<sub>p</sub>[log p − log q]：q 在 p 有质量的地方却是零会被无穷惩罚，
-        所以 q 会尽量覆盖所有 mode（mode-covering / zero-avoiding）。<br><br>
-        参考: <code>blog.evjang.com/2016/08/variational-bayes.html</code>
-      </div>
+      <div class="kv"><span><span class="dot" style="background:var(--q-rev)"></span>Reverse KL</span><b id="k-loss-rev">–</b></div>
+      <div class="kv"><span><span class="dot" style="background:var(--q-fwd)"></span>Forward KL</span><b id="k-loss-fwd">–</b></div>
     </aside>
 
     <section class="plots">
-      <div class="formulas">
-        <h3 data-i18n="fx.title">公式说明</h3>
-        <div class="block">
-          <div class="col" data-i18n-html="fx.pBlock">
-            <b>目标分布 p(x)</b>（固定，<span id="fpk">3</span> 个 mode）
-            $$p(x)=\sum_{k=1}^{K_p} w_k\,\mathcal{N}(x\mid \mu_k,\sigma_k^2)$$
-            <div class="muted">
-              代码中 $\mu_k$ 在 $[-4\frac{K_p-1}{2},\;+4\frac{K_p-1}{2}]$ 等距取值,
-              $\sigma_k=0.6$, $w_k=1/K_p$。
-            </div>
-          </div>
-          <div class="col" data-i18n-html="fx.qBlock">
-            <b>变分分布 q(x; θ)</b>（可训练，<span id="fqk">1</span> 个分量）
-            $$q(x;\theta)=\sum_{j=1}^{K_q}\pi_j\,\mathcal{N}(x\mid m_j,s_j^2)$$
-            <div class="muted">
-              $\theta=\{m_j,\;s_j,\;\pi_j\}$ 通过 Adam 优化,
-              $\pi_j=\mathrm{softmax}(\text{logits})_j$。
-            </div>
-          </div>
-        </div>
-        <div class="block" style="margin-top:14px">
-          <div class="col" data-i18n-html="fx.revBlock">
-            <span class="tag rev">Reverse KL</span> <b>mode-seeking</b>
-            $$D_{\mathrm{KL}}(q\|p)=\int q(x)\log\frac{q(x)}{p(x)}\,dx$$
-            <div class="muted">
-              q 落在 p 为零的位置会被无穷惩罚（zero-forcing）,
-              所以 q 会收缩到某个 mode 上。
-            </div>
-          </div>
-          <div class="col" data-i18n-html="fx.fwdBlock">
-            <span class="tag fwd">Forward KL</span> <b>mode-covering</b>
-            $$D_{\mathrm{KL}}(p\|q)=\int p(x)\log\frac{p(x)}{q(x)}\,dx$$
-            <div class="muted">
-              p 有质量但 q 为零的位置会被无穷惩罚（zero-avoiding）,
-              所以 q 会尽量覆盖所有 mode。
-            </div>
-          </div>
-        </div>
-        <div class="muted" style="margin-top:10px" data-i18n-html="fx.implNote">
-          实现：两种 KL 都在浏览器中用 <b>数值积分</b>（梯形法则，2000 点密网格）求得,
-          梯度对 $\theta$ 解析推导。无采样噪声，除离散误差外 $\hat D_{\mathrm{KL}}\ge 0$。
-        </div>
-        <div class="muted" style="margin-top:10px; padding: 8px 10px; background: rgba(110,231,255,0.08); border-left: 3px solid var(--accent); border-radius: 4px;" data-i18n-html="fx.warning">
-          <b style="color:var(--accent)">⚠ 实际拟合更复杂</b>：mode-seeking / mode-covering 是<b>倾向性描述</b>，不是<b>确定性保证</b>。
-          最终结果由 <b>K_q 容量、学习率、初始化、迭代步数、局部最优</b> 共同决定。
-          例如 K_q ≥ K_p 时两种 KL 结果几乎一样；K_q &lt; K_p 时 reverse KL 也常出现"多个分量挤同一 mode"的局部最优。
-          真实 VI/LLM 蒸馏还会叠加采样噪声、正则项、模型架构等因素——本 demo 是<b>建立直觉</b>用的极简案例。
-        </div>
-      </div>
-
       <div class="plot-wrap">
         <canvas id="plot"></canvas>
         <div class="legend">
@@ -222,6 +214,21 @@
           <span><span class="dot" style="background:var(--q-fwd)"></span><span data-i18n="legend.fwdCurve">Forward KL 曲线</span></span>
         </div>
       </div>
+
+      <div class="formulas">
+        <h3 data-i18n="fx.title">公式说明</h3>
+        <div class="block">
+          <div class="col" data-i18n-html="fx.pBlock"></div>
+          <div class="col" data-i18n-html="fx.qBlock"></div>
+        </div>
+        <div class="block" style="margin-top:14px">
+          <div class="col" data-i18n-html="fx.revBlock"></div>
+          <div class="col" data-i18n-html="fx.fwdBlock"></div>
+        </div>
+        <div class="muted" style="margin-top:12px" data-i18n-html="fx.implNote"></div>
+        <div class="muted note-box" data-i18n-html="fx.warning"></div>
+        <div class="refs" data-i18n-html="fx.refs"></div>
+      </div>
     </section>
   </main>
 
@@ -232,22 +239,18 @@
 const I18N = {
   zh: {
     'title': 'Reverse vs Forward KL · 多模态高斯拟合',
-    'subtitle': 'Reverse KL(q‖p) 倾向 mode-seeking，Forward KL(p‖q) 倾向 mode-covering',
+    'subtitle': '固定目标分布 p(x)，训练 q(x) 去拟合它：Reverse KL(q‖p) 倾向 mode-seeking，Forward KL(p‖q) 倾向 mode-covering',
     'panel.params': '参数设置',
     'panel.pModes': '目标分布 p(x) 的 mode 数量',
     'panel.qComps': '变分分布 q(x) 的高斯分量数',
     'panel.steps': '迭代步数',
     'panel.lr': '学习率',
-    'panel.pushEvery': '推送间隔',
     'panel.seed': '随机种子（留空=真随机）',
-    'panel.integNote': '已改用数值积分，无采样噪声',
     'panel.btnBoth': '同时对比 (双通道)',
     'panel.statusIdle': '就绪',
     'panel.statusTraining': '训练中 · {kl} KL',
     'panel.statusDone': '完成',
     'panel.runState': '运行状态',
-    'panel.notesTitle': '说明',
-    'panel.notes': '<b>Reverse KL</b> = E<sub>q</sub>[log q − log p]：q 落在 p 为零的地方会被无穷惩罚，所以 q 会退缩到 p 的某个 mode 上（mode-seeking / zero-forcing）。<br><br><b>Forward KL</b> = E<sub>p</sub>[log p − log q]：q 在 p 有质量的地方却是零会被无穷惩罚，所以 q 会尽量覆盖所有 mode（mode-covering / zero-avoiding）。<br><br>参考: <code>blog.evjang.com/2016/08/variational-bayes.html</code>',
     'fx.title': '公式说明',
     'fx.pBlock': '<b>目标分布 p(x)</b>（固定，<span id="fpk">3</span> 个 mode）$$p(x)=\\sum_{k=1}^{K_p} w_k\\,\\mathcal{N}(x\\mid \\mu_k,\\sigma_k^2)$$<div class="muted">代码中 $\\mu_k$ 在 $[-4\\frac{K_p-1}{2},\\;+4\\frac{K_p-1}{2}]$ 等距取值, $\\sigma_k=0.6$, $w_k=1/K_p$。</div>',
     'fx.qBlock': '<b>变分分布 q(x; θ)</b>（可训练，<span id="fqk">1</span> 个分量）$$q(x;\\theta)=\\sum_{j=1}^{K_q}\\pi_j\\,\\mathcal{N}(x\\mid m_j,s_j^2)$$<div class="muted">$\\theta=\\{m_j,\\;s_j,\\;\\pi_j\\}$ 通过 Adam 优化, $\\pi_j=\\mathrm{softmax}(\\text{logits})_j$。</div>',
@@ -255,28 +258,25 @@ const I18N = {
     'fx.fwdBlock': '<span class="tag fwd">Forward KL</span> <b>mode-covering</b>$$D_{\\mathrm{KL}}(p\\|q)=\\int p(x)\\log\\frac{p(x)}{q(x)}\\,dx$$<div class="muted">p 有质量但 q 为零的位置会被无穷惩罚（zero-avoiding）, 所以 q 会尽量覆盖所有 mode。</div>',
     'fx.implNote': '实现：两种 KL 都在浏览器中用 <b>数值积分</b>（梯形法则，2000 点密网格）求得, 梯度对 $\\theta$ 解析推导。无采样噪声，除离散误差外 $\\hat D_{\\mathrm{KL}}\\ge 0$。',
     'fx.warning': '<b style="color:var(--accent)">⚠ 实际拟合更复杂</b>：mode-seeking / mode-covering 是<b>倾向性描述</b>，不是<b>确定性保证</b>。最终结果由 <b>K_q 容量、学习率、初始化、迭代步数、局部最优</b> 共同决定。例如 K_q ≥ K_p 时两种 KL 结果几乎一样；K_q &lt; K_p 时 reverse KL 也常出现"多个分量挤同一 mode"的局部最优。真实 VI/LLM 蒸馏还会叠加采样噪声、正则项、模型架构等因素——本 demo 是<b>建立直觉</b>用的极简案例。',
+    'fx.refs': '参考：Eric Jang, <a href="https://blog.evjang.com/2016/08/variational-bayes.html">A Beginner’s Guide to Variational Methods: Mean-Field Approximation</a>；Thinking Machines, <a href="https://thinkingmachines.ai/blog/on-policy-distillation/">On-Policy Distillation</a>。',
     'legend.pTarget': '目标 p(x)',
     'legend.revCurve': 'Reverse KL 曲线',
     'legend.fwdCurve': 'Forward KL 曲线',
   },
   en: {
     'title': 'Reverse vs Forward KL · Multi-Modal Gaussian Fitting',
-    'subtitle': 'Reverse KL(q‖p) tends toward mode-seeking; Forward KL(p‖q) tends toward mode-covering',
+    'subtitle': 'q(x) is trained to fit a fixed target p(x): Reverse KL(q‖p) tends toward mode-seeking; Forward KL(p‖q) tends toward mode-covering',
     'panel.params': 'Parameters',
     'panel.pModes': 'Number of modes in target p(x)',
     'panel.qComps': 'Number of Gaussian components in q(x)',
     'panel.steps': 'Steps',
     'panel.lr': 'Learning rate',
-    'panel.pushEvery': 'Push every',
     'panel.seed': 'Random seed (empty = nondeterministic)',
-    'panel.integNote': 'Now using numerical integration — no sampling noise',
     'panel.btnBoth': 'Compare Both (dual channel)',
     'panel.statusIdle': 'Ready',
     'panel.statusTraining': 'Training · {kl} KL',
     'panel.statusDone': 'Done',
     'panel.runState': 'Run status',
-    'panel.notesTitle': 'Notes',
-    'panel.notes': '<b>Reverse KL</b> = E<sub>q</sub>[log q − log p]: if q places mass where p is zero, the penalty is infinite, so q retreats onto a single mode of p (mode-seeking / zero-forcing).<br><br><b>Forward KL</b> = E<sub>p</sub>[log p − log q]: if q is zero where p has mass, the penalty is infinite, so q tries to cover every mode of p (mode-covering / zero-avoiding).<br><br>Ref: <code>blog.evjang.com/2016/08/variational-bayes.html</code>',
     'fx.title': 'Formulas',
     'fx.pBlock': '<b>Target distribution p(x)</b> (fixed, <span id="fpk">3</span> modes)$$p(x)=\\sum_{k=1}^{K_p} w_k\\,\\mathcal{N}(x\\mid \\mu_k,\\sigma_k^2)$$<div class="muted">In code, $\\mu_k$ is evenly spaced on $[-4\\frac{K_p-1}{2},\\;+4\\frac{K_p-1}{2}]$, with $\\sigma_k=0.6$ and $w_k=1/K_p$.</div>',
     'fx.qBlock': '<b>Variational distribution q(x; θ)</b> (trainable, <span id="fqk">1</span> components)$$q(x;\\theta)=\\sum_{j=1}^{K_q}\\pi_j\\,\\mathcal{N}(x\\mid m_j,s_j^2)$$<div class="muted">$\\theta=\\{m_j,\\;s_j,\\;\\pi_j\\}$ are optimized by Adam, with $\\pi_j=\\mathrm{softmax}(\\text{logits})_j$.</div>',
@@ -284,6 +284,7 @@ const I18N = {
     'fx.fwdBlock': '<span class="tag fwd">Forward KL</span> <b>mode-covering</b>$$D_{\\mathrm{KL}}(p\\|q)=\\int p(x)\\log\\frac{p(x)}{q(x)}\\,dx$$<div class="muted">Regions where p has mass but q is zero are infinitely penalized (zero-avoiding), so q spreads to cover every mode.</div>',
     'fx.implNote': 'Implementation: both KLs are computed by <b>numerical integration</b> (trapezoidal rule, 2000-point dense grid) in the browser, with analytically derived gradients for $\\theta$. No sampling noise, and $\\hat D_{\\mathrm{KL}}\\ge 0$ up to discretization error.',
     'fx.warning': '<b style="color:var(--accent)">⚠ Real fits are more complex</b>: mode-seeking / mode-covering are <b>directional tendencies</b>, not <b>deterministic guarantees</b>. The actual outcome depends on <b>K_q capacity, learning rate, initialization, step count, and local optima</b>. For example, when K_q ≥ K_p the two KLs behave almost identically; when K_q &lt; K_p, reverse KL often lands in local optima where multiple components collapse onto the same mode. Real VI / LLM distillation also faces sampling noise, regularization, and architecture choices — this demo is a minimal case for <b>building intuition</b>.',
+    'fx.refs': 'References: Eric Jang, <a href="https://blog.evjang.com/2016/08/variational-bayes.html">A Beginner’s Guide to Variational Methods: Mean-Field Approximation</a>; Thinking Machines, <a href="https://thinkingmachines.ai/blog/on-policy-distillation/">On-Policy Distillation</a>.',
     'legend.pTarget': 'Target p(x)',
     'legend.revCurve': 'Reverse KL curve',
     'legend.fwdCurve': 'Forward KL curve',
@@ -357,6 +358,11 @@ function disableButtons(d) {
 // ---------------------------------------------------------------------------
 // Canvas plots (retina aware)
 // ---------------------------------------------------------------------------
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+const CANVAS_FONT = '"Avenir Next", -apple-system, "PingFang SC", sans-serif';
+
 function setupCanvas(canvas) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
@@ -373,7 +379,7 @@ function drawPDF() {
   ctx.clearRect(0, 0, w, h);
 
   if (!state.grid) {
-    ctx.fillStyle = '#8a90b8'; ctx.font = '13px sans-serif';
+    ctx.fillStyle = cssVar('--muted'); ctx.font = '14px ' + CANVAS_FONT;
     ctx.fillText(currentLang === 'zh' ? '点击左侧按钮开始训练' : 'Click a button on the left to start training', 20, 30); return;
   }
 
@@ -394,7 +400,7 @@ function drawPDF() {
   const Y = y => h - pad.b - (Math.min(y, ymax) / ymax) * (h - pad.t - pad.b);
 
   // grid
-  ctx.strokeStyle = '#2a2f4a'; ctx.lineWidth = 1;
+  ctx.strokeStyle = cssVar('--grid'); ctx.lineWidth = 1;
   ctx.beginPath();
   for (let i = 0; i <= 5; i++) {
     const y = pad.t + i * (h - pad.t - pad.b) / 5;
@@ -403,7 +409,7 @@ function drawPDF() {
   ctx.stroke();
 
   // axes labels
-  ctx.fillStyle = '#8a90b8'; ctx.font = '11px sans-serif';
+  ctx.fillStyle = cssVar('--muted'); ctx.font = '12px ' + CANVAS_FONT;
   ctx.fillText(x0.toFixed(1), pad.l, h - 10);
   ctx.fillText(x1.toFixed(1), w - pad.r - 20, h - 10);
   ctx.fillText('p(x), q(x)', 6, pad.t + 10);
@@ -425,10 +431,10 @@ function drawPDF() {
     }
   };
 
-  drawLine(state.p_pdf, '#ffd166', 'rgba(255,209,102,0.18)');
-  drawLine(state.p_pdf, '#ffd166', null);
-  drawLine(state.q_pdf.reverse, '#ef476f', null);
-  drawLine(state.q_pdf.forward, '#06d6a0', null);
+  drawLine(state.p_pdf, null, cssVar('--p-fill'));
+  drawLine(state.p_pdf, cssVar('--p-color'), null);
+  drawLine(state.q_pdf.reverse, cssVar('--q-rev'), null);
+  drawLine(state.q_pdf.forward, cssVar('--q-fwd'), null);
 }
 
 function drawLossCurve() {
@@ -454,7 +460,7 @@ function drawLossCurve() {
   const Y = v => h - pad.b - (v - vmin) / (vmax - vmin) * (h - pad.t - pad.b);
 
   // grid
-  ctx.strokeStyle = '#2a2f4a';
+  ctx.strokeStyle = cssVar('--grid'); ctx.lineWidth = 1;
   ctx.beginPath();
   for (let i = 0; i <= 4; i++) {
     const y = pad.t + i * (h - pad.t - pad.b) / 4;
@@ -462,7 +468,7 @@ function drawLossCurve() {
   }
   ctx.stroke();
 
-  ctx.fillStyle = '#8a90b8'; ctx.font = '11px sans-serif';
+  ctx.fillStyle = cssVar('--muted'); ctx.font = '12px ' + CANVAS_FONT;
   ctx.fillText(vmax.toFixed(2), 4, pad.t + 10);
   ctx.fillText(vmin.toFixed(2), 4, h - pad.b);
   ctx.fillText('step', w - 30, h - 8);
@@ -479,8 +485,8 @@ function drawLossCurve() {
     });
     ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
   };
-  drawHist(state.loss_hist.reverse, '#ef476f');
-  drawHist(state.loss_hist.forward, '#06d6a0');
+  drawHist(state.loss_hist.reverse, cssVar('--q-rev'));
+  drawHist(state.loss_hist.forward, cssVar('--q-fwd'));
 }
 
 function redraw() { drawPDF(); drawLossCurve(); }
@@ -737,7 +743,6 @@ function startRun(kl_type) {
     q_components: +$('q_components').value,
     steps: +$('steps').value,
     lr: +$('lr').value,
-    send_every: +$('send_every').value,
     seedRaw: $('seed').value,
   };
   const seed = cfg.seedRaw === '' ? ((Math.random() * 2 ** 31) | 0) : (+cfg.seedRaw);
@@ -814,12 +819,25 @@ function startRun(kl_type) {
   requestAnimationFrame(tick);
 }
 
+function previewTarget() {
+  if (state.running) return;
+  const p = buildTarget(+$('target_modes').value);
+  const pMin = Math.min(...p.mus), pMax = Math.max(...p.mus);
+  state.grid = Array.from(linspace(pMin - 3.0, pMax + 3.0, 400));
+  state.p_pdf = Array.from(evalPTarget(p, state.grid));
+  state.q_pdf = { reverse: null, forward: null };
+  state.loss_hist = { reverse: [], forward: [] };
+  ['k-step', 'k-loss-rev', 'k-loss-fwd'].forEach(id => $(id).textContent = '–');
+  redraw();
+}
+$('target_modes').addEventListener('input', previewTarget);
+
 $('btn-rev').onclick = () => { state.q_pdf.forward = null; state.loss_hist.forward = []; startRun('reverse'); };
 $('btn-fwd').onclick = () => { state.q_pdf.reverse = null; state.loss_hist.reverse = []; startRun('forward'); };
 $('btn-both').onclick = () => { startRun('reverse'); startRun('forward'); };
 
 applyLang(currentLang);
-redraw();
+previewTarget();
 </script>
 </body>
 </html>
