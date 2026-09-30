@@ -134,7 +134,7 @@ $$q(x;\theta) = \sum_{j=1}^{K_q} \pi_j \, \mathcal{N}(x \mid m_j, s_j^2)$$
 
 $$D_\text{KL}(q\|p) = \int q(x) \log \tfrac{q(x)}{p(x)} \, dx \qquad D_\text{KL}(p\|q) = \int p(x) \log \tfrac{p(x)}{q(x)} \, dx$$
 
-**Why not sample?** In real VI, p is typically only known up to normalization, so MC is unavoidable. Here both p and q are our own GMMs — numerical integration is more stable, `loss ≥ 0` holds strictly, and there's no log(0) blow-up. See the implementation notes at the end for a discussion.
+**Why not sample?** In real VI, p is typically only known up to normalization, so MC is unavoidable. Here both p and q are our own GMMs — numerical integration is more stable, `loss ≥ 0` up to discretization error, and there's no log(0) blow-up. See the implementation notes at the end for a discussion.
 
 ## Quick Start
 
@@ -167,7 +167,7 @@ No pip, no venv, no torch — everything runs in the browser.
 ## Implementation Highlights
 
 - **Hand-derived analytic gradients**: no autograd framework needed. `∂q/∂m_j`, `∂q/∂log s_j`, `∂q/∂logit_j` are computed in closed form. Verified against finite differences across ~100 configurations; when the integration grid is wide enough to contain q's tails, relative error is ≤ 1e-8.
-- **Trapezoidal integration on a dense grid** (2000 points spanning ±8 beyond p's range) — precise enough that `loss ≥ 0` holds strictly and there's no MC noise.
+- **Trapezoidal integration on a dense grid** (2000 points spanning ±8 beyond p's range) — precise enough that `loss ≥ 0` holds in practice (the discrete form does not strictly guarantee it) and there's no MC noise.
 - **σ clamping**: σ is clamped to [0.05, 20] each forward pass to prevent numerical blow-ups.
 - **Seedable RNG**: a mulberry32 PRNG lets you pin the initialization for reproducible runs, or leave blank to explore the local-optima landscape.
 - **Zero dependencies**: no build step, no npm, no framework. MathJax is loaded from a CDN only for pretty formula rendering; you can strip it and the demo still works.

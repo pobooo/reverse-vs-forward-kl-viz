@@ -139,7 +139,7 @@
         <button class="both" id="btn-both" data-i18n="panel.btnBoth">同时对比 (双通道)</button>
       </div>
 
-      <div class="status" id="status" data-i18n="panel.statusIdle">未连接</div>
+      <div class="status" id="status" data-i18n="panel.statusIdle">就绪</div>
 
       <h3 style="margin-top:20px" data-i18n="panel.runState">运行状态</h3>
       <div class="kv"><span>Step</span><b id="k-step">–</b></div>
@@ -196,8 +196,8 @@
           </div>
         </div>
         <div class="muted" style="margin-top:10px" data-i18n-html="fx.implNote">
-          实现：两种 KL 都通过 <b>数值积分</b>（梯形法则，2000 点密网格）在 PyTorch 里求得,
-          梯度对 $\theta$ 自动回传。无采样噪声，$\hat D_{\mathrm{KL}}\ge 0$ 严格成立。
+          实现：两种 KL 都在浏览器中用 <b>数值积分</b>（梯形法则，2000 点密网格）求得,
+          梯度对 $\theta$ 解析推导。无采样噪声，除离散误差外 $\hat D_{\mathrm{KL}}\ge 0$。
         </div>
         <div class="muted" style="margin-top:10px; padding: 8px 10px; background: rgba(110,231,255,0.08); border-left: 3px solid var(--accent); border-radius: 4px;" data-i18n-html="fx.warning">
           <b style="color:var(--accent)">⚠ 实际拟合更复杂</b>：mode-seeking / mode-covering 是<b>倾向性描述</b>，不是<b>确定性保证</b>。
@@ -242,11 +242,9 @@ const I18N = {
     'panel.seed': '随机种子（留空=真随机）',
     'panel.integNote': '已改用数值积分，无采样噪声',
     'panel.btnBoth': '同时对比 (双通道)',
-    'panel.statusIdle': '未连接',
-    'panel.statusConnecting': '连接中… ({kl} KL)',
+    'panel.statusIdle': '就绪',
     'panel.statusTraining': '训练中 · {kl} KL',
     'panel.statusDone': '完成',
-    'panel.statusError': 'WebSocket 错误',
     'panel.runState': '运行状态',
     'panel.notesTitle': '说明',
     'panel.notes': '<b>Reverse KL</b> = E<sub>q</sub>[log q − log p]：q 落在 p 为零的地方会被无穷惩罚，所以 q 会退缩到 p 的某个 mode 上（mode-seeking / zero-forcing）。<br><br><b>Forward KL</b> = E<sub>p</sub>[log p − log q]：q 在 p 有质量的地方却是零会被无穷惩罚，所以 q 会尽量覆盖所有 mode（mode-covering / zero-avoiding）。<br><br>参考: <code>blog.evjang.com/2016/08/variational-bayes.html</code>',
@@ -255,7 +253,7 @@ const I18N = {
     'fx.qBlock': '<b>变分分布 q(x; θ)</b>（可训练，<span id="fqk">1</span> 个分量）$$q(x;\\theta)=\\sum_{j=1}^{K_q}\\pi_j\\,\\mathcal{N}(x\\mid m_j,s_j^2)$$<div class="muted">$\\theta=\\{m_j,\\;s_j,\\;\\pi_j\\}$ 通过 Adam 优化, $\\pi_j=\\mathrm{softmax}(\\text{logits})_j$。</div>',
     'fx.revBlock': '<span class="tag rev">Reverse KL</span> <b>mode-seeking</b>$$D_{\\mathrm{KL}}(q\\|p)=\\int q(x)\\log\\frac{q(x)}{p(x)}\\,dx$$<div class="muted">q 落在 p 为零的位置会被无穷惩罚（zero-forcing）, 所以 q 会收缩到某个 mode 上。</div>',
     'fx.fwdBlock': '<span class="tag fwd">Forward KL</span> <b>mode-covering</b>$$D_{\\mathrm{KL}}(p\\|q)=\\int p(x)\\log\\frac{p(x)}{q(x)}\\,dx$$<div class="muted">p 有质量但 q 为零的位置会被无穷惩罚（zero-avoiding）, 所以 q 会尽量覆盖所有 mode。</div>',
-    'fx.implNote': '实现：两种 KL 都通过 <b>数值积分</b>（梯形法则，2000 点密网格）在 PyTorch 里求得, 梯度对 $\\theta$ 自动回传。无采样噪声，$\\hat D_{\\mathrm{KL}}\\ge 0$ 严格成立。',
+    'fx.implNote': '实现：两种 KL 都在浏览器中用 <b>数值积分</b>（梯形法则，2000 点密网格）求得, 梯度对 $\\theta$ 解析推导。无采样噪声，除离散误差外 $\\hat D_{\\mathrm{KL}}\\ge 0$。',
     'fx.warning': '<b style="color:var(--accent)">⚠ 实际拟合更复杂</b>：mode-seeking / mode-covering 是<b>倾向性描述</b>，不是<b>确定性保证</b>。最终结果由 <b>K_q 容量、学习率、初始化、迭代步数、局部最优</b> 共同决定。例如 K_q ≥ K_p 时两种 KL 结果几乎一样；K_q &lt; K_p 时 reverse KL 也常出现"多个分量挤同一 mode"的局部最优。真实 VI/LLM 蒸馏还会叠加采样噪声、正则项、模型架构等因素——本 demo 是<b>建立直觉</b>用的极简案例。',
     'legend.pTarget': '目标 p(x)',
     'legend.revCurve': 'Reverse KL 曲线',
@@ -273,11 +271,9 @@ const I18N = {
     'panel.seed': 'Random seed (empty = nondeterministic)',
     'panel.integNote': 'Now using numerical integration — no sampling noise',
     'panel.btnBoth': 'Compare Both (dual channel)',
-    'panel.statusIdle': 'Not connected',
-    'panel.statusConnecting': 'Connecting… ({kl} KL)',
+    'panel.statusIdle': 'Ready',
     'panel.statusTraining': 'Training · {kl} KL',
     'panel.statusDone': 'Done',
-    'panel.statusError': 'WebSocket error',
     'panel.runState': 'Run status',
     'panel.notesTitle': 'Notes',
     'panel.notes': '<b>Reverse KL</b> = E<sub>q</sub>[log q − log p]: if q places mass where p is zero, the penalty is infinite, so q retreats onto a single mode of p (mode-seeking / zero-forcing).<br><br><b>Forward KL</b> = E<sub>p</sub>[log p − log q]: if q is zero where p has mass, the penalty is infinite, so q tries to cover every mode of p (mode-covering / zero-avoiding).<br><br>Ref: <code>blog.evjang.com/2016/08/variational-bayes.html</code>',
@@ -286,7 +282,7 @@ const I18N = {
     'fx.qBlock': '<b>Variational distribution q(x; θ)</b> (trainable, <span id="fqk">1</span> components)$$q(x;\\theta)=\\sum_{j=1}^{K_q}\\pi_j\\,\\mathcal{N}(x\\mid m_j,s_j^2)$$<div class="muted">$\\theta=\\{m_j,\\;s_j,\\;\\pi_j\\}$ are optimized by Adam, with $\\pi_j=\\mathrm{softmax}(\\text{logits})_j$.</div>',
     'fx.revBlock': '<span class="tag rev">Reverse KL</span> <b>mode-seeking</b>$$D_{\\mathrm{KL}}(q\\|p)=\\int q(x)\\log\\frac{q(x)}{p(x)}\\,dx$$<div class="muted">Placing q where p is zero is infinitely penalized (zero-forcing), so q collapses onto a single mode.</div>',
     'fx.fwdBlock': '<span class="tag fwd">Forward KL</span> <b>mode-covering</b>$$D_{\\mathrm{KL}}(p\\|q)=\\int p(x)\\log\\frac{p(x)}{q(x)}\\,dx$$<div class="muted">Regions where p has mass but q is zero are infinitely penalized (zero-avoiding), so q spreads to cover every mode.</div>',
-    'fx.implNote': 'Implementation: both KLs are computed by <b>numerical integration</b> (trapezoidal rule, 2000-point dense grid) in PyTorch, with gradients through $\\theta$ from autograd. No sampling noise, and $\\hat D_{\\mathrm{KL}}\\ge 0$ holds strictly.',
+    'fx.implNote': 'Implementation: both KLs are computed by <b>numerical integration</b> (trapezoidal rule, 2000-point dense grid) in the browser, with analytically derived gradients for $\\theta$. No sampling noise, and $\\hat D_{\\mathrm{KL}}\\ge 0$ up to discretization error.',
     'fx.warning': '<b style="color:var(--accent)">⚠ Real fits are more complex</b>: mode-seeking / mode-covering are <b>directional tendencies</b>, not <b>deterministic guarantees</b>. The actual outcome depends on <b>K_q capacity, learning rate, initialization, step count, and local optima</b>. For example, when K_q ≥ K_p the two KLs behave almost identically; when K_q &lt; K_p, reverse KL often lands in local optima where multiple components collapse onto the same mode. Real VI / LLM distillation also faces sampling noise, regularization, and architecture choices — this demo is a minimal case for <b>building intuition</b>.',
     'legend.pTarget': 'Target p(x)',
     'legend.revCurve': 'Reverse KL curve',
@@ -491,9 +487,6 @@ function redraw() { drawPDF(); drawLossCurve(); }
 window.addEventListener('resize', redraw);
 
 // ---------------------------------------------------------------------------
-// WebSocket driver
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // Pure-JS trainer: Gaussian mixtures + hand-derived gradients + Adam + trapezoidal KL.
 // ---------------------------------------------------------------------------
 
@@ -515,7 +508,7 @@ function randNorm(rand) {
 const LOG_2PI = Math.log(2 * Math.PI);
 
 function buildTarget(K) {
-  // Match backend: mus evenly spaced on [-4*(K-1)/2, +4*(K-1)/2], sigma=0.6, uniform weights.
+  // mus evenly spaced on [-4*(K-1)/2, +4*(K-1)/2], sigma=0.6, uniform weights.
   const mus = new Float64Array(K);
   const sigmas = new Float64Array(K);
   const weights = new Float64Array(K);
@@ -529,7 +522,7 @@ function buildTarget(K) {
 }
 
 function buildQ(Kq, initRange, rand) {
-  // Mirror backend init: linspace(-R, R) + 0.15 * spacing * randn
+  // Init: linspace(-R, R) + 0.15 * spacing * randn
   const mus = new Float64Array(Kq);
   const logSigmas = new Float64Array(Kq);
   const logits = new Float64Array(Kq);
@@ -572,7 +565,7 @@ function evalQ(q, grid) {
   const sigmas = new Float64Array(Kq);
   for (let j = 0; j < Kq; j++) {
     let ls = q.logSigmas[j];
-    // Clamp: match backend log_sigma clamp [log(0.05), log(20)]
+    // Clamp log_sigma to [log(0.05), log(20)]
     if (ls < Math.log(0.05)) ls = Math.log(0.05);
     if (ls > Math.log(20.0)) ls = Math.log(20.0);
     sigmas[j] = Math.exp(ls);
@@ -694,7 +687,7 @@ function makeAdam(shape, lr) {
   };
 }
 function adamStep(state, q, grads, clipNorm = 5.0) {
-  // Optional global gradient-norm clip (matches backend clip_grad_norm_).
+  // Optional global gradient-norm clip.
   let total = 0;
   for (let j = 0; j < grads.gMu.length; j++) {
     total += grads.gMu[j] ** 2 + grads.gLogS[j] ** 2 + grads.gLogit[j] ** 2;
@@ -752,7 +745,7 @@ function startRun(kl_type) {
 
   const p = buildTarget(cfg.target_modes);
 
-  // Init q with range matching p's extent (mirror backend).
+  // Init q with range matching p's extent.
   const pExtent = Math.max(...p.mus.map(Math.abs)) + 2.0;
   const q = buildQ(cfg.q_components, pExtent, rand);
 
